@@ -1,0 +1,3 @@
+dependencies:
+  idf: ">=5.0" # The version of the ESP-IDF that esp-audio-player requires
+  usb_host_uac: "1.0.*"
