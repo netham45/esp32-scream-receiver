@@ -1,3 +1,5 @@
+**/secrets.h
 build/
-secrets.h
-managed_components/*/
+spiffs/
+managed_components/
+*.uf2

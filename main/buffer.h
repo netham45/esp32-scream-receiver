@@ -10,3 +10,4 @@ void setup_buffer();
 bool push_chunk(uint8_t *chunk);
 uint8_t *pop_chunk();
 void setup_buffer();
+void empty_buffer();

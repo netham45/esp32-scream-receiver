@@ -1,3 +1,3 @@
-# ESP32-S3 Scream Receiver
+# ESP32-ScreamReader
 
-This receives scream data over tcp to an esp32-s3 and outputs it to a UAC 1.0 sound device, very much WIP and barely works at this stage
+This is an ESP32 screamreader that can target the ESP32 for SPDIF or ESP32S3 for USB UAC 1.0 Host.
