@@ -19,16 +19,22 @@ bool is_silent = false;
 
 void resume_playback() {
 #ifdef IS_USB
-	uac_host_stream_config_t stm_config = {
-        .channels = 2,
-        .bit_resolution = 16,
-        .sample_freq = 48000,
-    };
-    ESP_ERROR_CHECK(uac_host_device_start(spkr_handle, &stm_config));
-	ESP_ERROR_CHECK(uac_host_device_set_volume(spkr_handle, volume));
+    // Only try to resume if we have a valid DAC handle
+    if (spkr_handle != NULL) {
+        uac_host_stream_config_t stm_config = {
+            .channels = 2,
+            .bit_resolution = 16,
+            .sample_freq = 48000,
+        };
+        ESP_LOGI(TAG, "Resume Playback with DAC");
+        ESP_ERROR_CHECK(uac_host_device_start(spkr_handle, &stm_config));
+        ESP_ERROR_CHECK(uac_host_device_set_volume(spkr_handle, volume));
+        playing = true;
+    } else {
+        ESP_LOGI(TAG, "Cannot resume playback - No DAC connected");
+        // Do NOT set playing to true if no DAC is available
+    }
 #endif
-	ESP_LOGI(TAG, "Resume Playback");
-	playing = true;
 }
 
 #ifdef IS_USB
@@ -47,10 +53,16 @@ void stop_playback() {
 
 void audio_direct_write(uint8_t *data) {
 #ifdef IS_USB
-  uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
+  // Check if we have a valid DAC handle before writing
+  if (spkr_handle != NULL) {
+    uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
+  } else {
+    // DAC is not connected - we should be in sleep mode
+    ESP_LOGD(TAG, "Attempted write with no DAC");
+  }
 #endif
 #ifdef IS_SPDIF
-			spdif_write(data, PCM_CHUNK_SIZE);
+  spdif_write(data, PCM_CHUNK_SIZE);
 #endif
 }
 
@@ -60,12 +72,21 @@ void pcm_handler(void*) {
 		uint8_t *data = pop_chunk();
 		if (data) {
 #ifdef IS_USB
-			uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
+			if (spkr_handle != NULL) {
+				uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
+				is_silent = false;
+			} else {
+				// DAC is not connected but we're trying to play - should enter sleep
+				// This shouldn't happen if our start/stop logic is correct
+				ESP_LOGW(TAG, "PCM handler tried to write with no DAC");
+				playing = false; // Force playback to stop
+				is_silent = true;
+			}
 #endif
 #ifdef IS_SPDIF
 			spdif_write(data, PCM_CHUNK_SIZE);
-#endif
 			is_silent = false;
+#endif
 		}
 		else if (!is_silent) {
 			ESP_LOGI(TAG, "Silent");

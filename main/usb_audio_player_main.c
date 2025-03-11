@@ -17,6 +17,7 @@
 #include "config.h"
 #include "nvs_flash.h"
 #include "driver/gpio.h"
+#include "esp_sleep.h"
 #include "global.h"
 #ifdef IS_USB
 #include "usb/usb_host.h"
@@ -31,7 +32,10 @@
 #define DEFAULT_VOLUME          45
 #define RTC_CNTL_OPTION1_REG 0x6000812C
 #define RTC_CNTL_FORCE_DOWNLOAD_BOOT 1
+#define DAC_CHECK_SLEEP_TIME_MS 5000  // Wake every 5 seconds to check for DAC (use longer times to save power)
+#define NETWORK_SLEEP_TIME_MS 10       // Light sleep between network operations
 bool g_neighbor_report_active = false;
+bool device_sleeping = false;
 typedef enum {
     APP_EVENT = 0,
     UAC_DRIVER_EVENT,
@@ -73,6 +77,10 @@ static inline uint32_t WPA_GET_LE32(const uint8_t *a)
 
 
 static int s_retry_num = 0;
+
+// Forward declaration of WiFi initialization function
+void wifi_init_sta(void);
+
 #ifdef IS_USB
 static uac_host_device_handle_t s_spk_dev_handle = NULL;
 static void uac_device_callback(uac_host_device_handle_t uac_device_handle, const uac_host_device_event_t event, void *arg);
@@ -107,8 +115,45 @@ static void uf2_update_complete_cb()
     xTaskNotifyGive(main_task_hdl);
 }
 
+// Set up deep sleep parameters and timer to wake periodically to check for DAC
+void enter_deep_sleep_mode() {
+    if (device_sleeping) {
+        return; // Already in sleep mode
+    }
+    
+    ESP_LOGI(TAG, "Entering deep sleep mode");
+    device_sleeping = true;
+    
+    // Stop network activity and disconnect WiFi to save power
+    esp_wifi_disconnect();
+    esp_wifi_stop();
+    
+    // Configure ESP32 to wake up every few seconds to check for DAC
+    esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000); // Convert to microseconds
+    
+    // Actually enter deep sleep (this function doesn't return)
+    ESP_LOGI(TAG, "Going to deep sleep now");
+    esp_deep_sleep_start();
+    
+    // This code is never reached
+}
+
+// Function to exit sleep mode when DAC is connected - called after waking from deep sleep
+void exit_sleep_mode() {
+    ESP_LOGI(TAG, "Exiting sleep mode after deep sleep wake");
+    device_sleeping = false;
+    
+    // Disable sleep wakeup sources
+    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    
+    // Restart WiFi - we disconnected before sleeping
+    wifi_init_sta();
+}
+
 static void uac_device_callback(uac_host_device_handle_t uac_device_handle, const uac_host_device_event_t event, void *arg)
 {
+    // Check for disconnect event - doesn't matter if we use UAC_HOST_DEVICE_EVENT_DISCONNECTED 
+    // or UAC_HOST_DRIVER_EVENT_DISCONNECTED since they should be the same value
     if (event == UAC_HOST_DRIVER_EVENT_DISCONNECTED) {
         // stop audio player first
         s_spk_dev_handle = NULL;
@@ -116,7 +161,16 @@ static void uac_device_callback(uac_host_device_handle_t uac_device_handle, cons
 		stop_playback();
         ESP_LOGI(TAG, "UAC Device disconnected");
         ESP_ERROR_CHECK(uac_host_device_close(uac_device_handle));
+        
+        // Enter deep sleep mode when DAC disconnects
+        enter_deep_sleep_mode();
         return;
+    }
+    
+    // Device connections are handled in the driver callback, not here
+    // The device callback can exit sleep mode on device activity
+    if (device_sleeping && s_spk_dev_handle != NULL) {
+        exit_sleep_mode();
     }
     // Send uac device event to the event queue
     s_event_queue_t evt_queue = {
@@ -519,39 +573,90 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 
 	}
 }
-void wifi_init_sta(void);
+
+// Check if we need to go to deep sleep - returns true if we should continue running
+bool check_dac_or_sleep() {
+    // Check if we have a DAC connected
+#ifdef IS_USB
+    if (s_spk_dev_handle == NULL) {
+        // No DAC connected, prepare for deep sleep
+        ESP_LOGI(TAG, "No DAC detected on wake, going back to deep sleep");
+        
+        // Give a small delay for any pending logs to flush
+        vTaskDelay(pdMS_TO_TICKS(100));
+        
+        // Go to deep sleep again
+        enter_deep_sleep_mode();
+        
+        // This won't be reached due to deep sleep
+        return false;
+    }
+#endif
+    
+    // DAC is connected or we're not using USB, so continue normal operation
+    return true;
+}
 
 void app_main(void)
 {
-	    //Initialize NVS
+    // Initialize NVS (required for USB subsystem)
     BaseType_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
       ESP_ERROR_CHECK(nvs_flash_erase());
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    
 #ifdef IS_USB
+    // Initialize USB host first to detect DAC as early as possible
     s_event_queue = xQueueCreate(10, sizeof(s_event_queue_t));
     assert(s_event_queue != NULL);
     static TaskHandle_t uac_task_handle = NULL;
     ret = xTaskCreatePinnedToCore(uac_lib_task, "uac_events", 4096, NULL,
-                                             USER_TASK_PRIORITY, &uac_task_handle, 0);
+                                 USER_TASK_PRIORITY, &uac_task_handle, 0);
     assert(ret == pdTRUE);
     ret = xTaskCreatePinnedToCore(usb_lib_task, "usb_events", 4096, (void *)uac_task_handle,
-                                  USB_HOST_TASK_PRIORITY, NULL, 0);
+                                USB_HOST_TASK_PRIORITY, NULL, 0);
     assert(ret == pdTRUE);
+    
+    // Give USB system enough time to detect and enumerate devices
+    ESP_LOGI(TAG, "Waiting for USB device detection...");
+    // USB enumeration can take time, need to wait for it to complete
+    for (int i = 0; i < 10; i++) {
+        vTaskDelay(pdMS_TO_TICKS(200)); // Total 2 seconds waiting time, checking every 200ms
+        
+        // Check if device was detected during the delay
+        if (s_spk_dev_handle != NULL) {
+            ESP_LOGI(TAG, "DAC detected during enumeration");
+            break;
+        }
+        
+        ESP_LOGI(TAG, "Waiting for DAC... %d/10", i+1);
+    }
+    
+    // Check if DAC is connected - if not, go to deep sleep without initializing anything else
+    if (s_spk_dev_handle == NULL) {
+        ESP_LOGI(TAG, "No DAC detected after waiting, going to deep sleep");
+        // Configure timer wakeup
+        esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000);
+        // Go to deep sleep immediately without setting up other components
+        esp_deep_sleep_start();
+        return; // Never reached
+    }
 #endif
 
+    // Only initialize the rest of the system if DAC is connected
+    ESP_LOGI(TAG, "DAC detected, initializing full system");
+    
     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
     wifi_init_sta();
-	setup_buffer();
-	setup_audio();
-	setup_network();
-			bool status = false;
+    setup_buffer();
+    setup_audio();
+    setup_network();
+    
+    // Main loop just keeps system alive - deep sleep is managed by event callbacks
     while (1) {
-		if (!gpio_get_level(0)) {
-		}
-        vTaskDelay(100);
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 

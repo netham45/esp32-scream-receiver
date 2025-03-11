@@ -18,6 +18,9 @@
 //Volume 0.0f-1.0f
 #define VOLUME 1.0f
 
+// Time to wake from deep sleep to check for DAC (in ms)
+#define DAC_CHECK_SLEEP_TIME_MS 2000
+
 //#define IS_SPDIF
 #define IS_USB
 

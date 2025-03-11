@@ -10,6 +10,7 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "esp_sleep.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -24,15 +25,17 @@
 #include "secrets.h"
 #include "audio.h"
 
-const uint16_t HEADER_SIZE = 0;                         // Scream Header byte size, non-configurable (Part of Scream)
+const uint16_t HEADER_SIZE = 5;                         // Scream Header byte size, non-configurable (Part of Scream)
 const uint16_t PACKET_SIZE = PCM_CHUNK_SIZE + HEADER_SIZE;
-bool use_tcp = true;
+bool use_tcp = false;
 bool connected = false;
 
 char server[16] = {0};
 
 void udp_handler(void *);
-void tcp_handler(void *);  
+void tcp_handler(void *);
+
+// We should NOT sleep during active audio processing - removed network_light_sleep function
 
 void tcp_handler(void *) {
   int connect_failure = 0;
@@ -77,6 +80,7 @@ void tcp_handler(void *) {
 		memcpy(data, data + PACKET_SIZE, PACKET_SIZE);
 		datahead -= PACKET_SIZE;
 	}
+    // Just use a small task delay - no sleep during audio streaming
     vTaskDelay(1);
   }
   close(sock);
@@ -111,7 +115,13 @@ void udp_handler(void *) {
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         }
         ESP_LOGI(TAG, "Socket bound, port %d", PORT);
-		resume_playback();
+        
+        // Only try to resume playback if we're not in sleep mode
+        if (!device_sleeping) {
+            resume_playback();
+        } else {
+            ESP_LOGI(TAG, "Device is in sleep mode - not resuming playback");
+        }
         while (1) {
             int result = recv(sock, data + datahead, PACKET_SIZE, 0);
 			if (result && use_tcp) {
@@ -132,6 +142,8 @@ void udp_handler(void *) {
 				memcpy(data,data + PACKET_SIZE, PACKET_SIZE);
 				datahead -= PACKET_SIZE;
 			}
+            // Just use a small task delay - no sleep during audio streaming
+            vTaskDelay(1);
         }
 
         if (sock != -1) {
