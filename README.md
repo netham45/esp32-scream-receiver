@@ -74,7 +74,6 @@ Scream is an open-source virtual audio driver for Windows that captures system a
   - WiFi roaming with 802.11k/v/r support for seamless transition between access points
   - Maintains connections when moving around your home/office
 - **Efficient Power Management**:
-  - Light sleep mode during audio silence (saves power when no audio playing)
   - Deep sleep mode when no DAC is connected (minimal power consumption when not in use)
   - Automatic wake on network activity (instant resumption when audio starts)
 - **Audio Optimization**:
@@ -257,8 +256,6 @@ Audio format settings must match those set in the Scream Windows driver:
 ### Sleep Settings
 
 Sleep settings control power management behavior:
-
-- **Silence Threshold (default: 30000 ms)**: Time of continuous silence before the device enters light sleep mode.
 
 - **Network Check Interval (default: 1000 ms)**: How often the device checks for network activity while in sleep mode.
 
@@ -464,7 +461,6 @@ The ESP32 Scream Receiver has a multi-component architecture designed for real-t
 
 4. **Audio Processing**: Processes incoming audio:
    - PCM data handling
-   - Silence detection
    - Volume control
    - Audio output preparation
 
@@ -540,7 +536,7 @@ The system implements multiple power states:
    - Audio processing active
    - USB/SPDIF output active
 
-2. **Light Sleep Mode** (during silence):
+2. **Light Sleep Mode**:
    - CPU in light sleep between operations
    - WiFi in power save mode
    - USB device detached but ready
@@ -611,11 +607,6 @@ The device implements advanced WiFi roaming features:
 ### Sleep Modes
 
 Sleep modes are used to conserve power:
-
-- **Silence Detection**:
-  - Monitors for audio inactivity
-  - Enters light sleep after configured silence duration (default 30s)
-  - Maintains WiFi connection in power save mode
   
 - **Network Activity Detection**:
   - Periodically checks for Scream packets during sleep
@@ -773,9 +764,6 @@ Sleep modes are used to conserve power:
 
 **Q: Which USB DACs are compatible?**  
 A: Most USB Audio Class 1.0 devices are compatible. This includes many popular entry to mid-range USB DACs. USB Audio Class 2.0 devices (like those supporting 24/32-bit or sample rates above 96kHz) are not supported unless they can fall back to Class 1.0 mode.
-
-**Q: Why does the device go to sleep when there's no audio?**  
-A: This is a power-saving feature. The device enters light sleep mode after 30 seconds (default) of silence to conserve energy. It automatically wakes when audio streaming resumes. You can adjust this behavior in the Sleep Settings.
 
 **Q: How do I update the firmware?**  
 A: Connect the ESP32/ESP32-S3 to your computer, download the latest source code, and flash it using the ESP-IDF tools:
