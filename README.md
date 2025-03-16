@@ -2,6 +2,9 @@
 
 A WiFi-based audio streaming receiver for the Scream protocol, implemented on ESP32/ESP32-S3 microcontrollers.
 
+
+* Note: This documentation is AI-generated and has not been vetted for accuracy.
+
 ## Table of Contents
 - [Introduction](#introduction)
 - [Features](#features)
