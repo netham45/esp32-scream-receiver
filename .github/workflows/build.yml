@@ -12,8 +12,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [esp32s3]
+        target: [esp32, esp32s3]
         include:
+          - target: esp32
+            name: "ESP32 (SPDIF)"
+            config_define: IS_SPDIF
           - target: esp32s3
             name: "ESP32-S3 (USB)"
             config_define: IS_USB

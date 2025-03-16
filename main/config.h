@@ -28,7 +28,8 @@
 #define SILENCE_AMPLITUDE_THRESHOLD 10   // Audio amplitude below this is considered silent (0-32767)
 #define NETWORK_INACTIVITY_TIMEOUT_MS 5000 // Enter sleep mode after no packets for 5 seconds
 
+
 //#define IS_SPDIF
-#define IS_USB
+//#define IS_USB
 
 #define TAG "scream_receiver"
