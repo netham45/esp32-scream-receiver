@@ -346,6 +346,40 @@ The ESP32 version outputs SPDIF digital audio directly through GPIO pins:
 - Add a small series resistor (100-220 ohm) between the GPIO pin and the cable
 - For best results, use a proper S/PDIF transformer
 
+### ESP32 with Optical TOSLINK
+
+The ESP32 can also output digital audio through an optical TOSLINK connection using a simple circuit:
+
+```
+                 +3.3V
+                   ↑
+                   │
+               2 Vcc     EVERLIGHT
+ESP32-WROOM-32    │       PLT133/T10W etc.
+                Toslink    ┌───────┐
+                connector  │       │
+                   │       │       │
+    GPIO27 ────────1 Vin   │       │
+                   │       │       │
+                   │       └───────┘
+                3 GND
+                   │
+                   ↓
+                  GND
+```
+
+**Connections**:
+1. Connect GPIO27 of the ESP32 to pin 1 (Vin) of the TOSLINK connector
+2. Connect pin 2 (Vcc) of the TOSLINK connector to +3.3V
+3. Connect pin 3 (GND) of the TOSLINK connector to ground
+4. Use a standard TOSLINK optical transmitter like EVERLIGHT PLT133/T10W or compatible models
+
+**TOSLINK Connection Notes**:
+- No additional components required between the ESP32 and TOSLINK transmitter
+- The GPIO pin directly drives the optical transmitter
+- This provides complete electrical isolation between the ESP32 and your audio equipment
+- Compatible with any standard TOSLINK optical input on DACs, receivers, amplifiers, etc.
+
 ## Build and Flash Instructions
 
 ### GitHub Actions CI/CD
