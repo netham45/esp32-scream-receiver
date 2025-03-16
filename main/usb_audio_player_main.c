@@ -25,6 +25,7 @@
 #include "usb/uac_host.h"
 #endif
 // Include our new modules
+#include "config_manager.h"
 #include "wifi_manager.h"
 #include "web_server.h"
 
@@ -127,11 +128,11 @@ typedef struct {
     };
 } s_event_queue_t;
 
-static void uf2_update_complete_cb()
+/*static void uf2_update_complete_cb()
 {
     TaskHandle_t main_task_hdl = xTaskGetHandle("main");
     xTaskNotifyGive(main_task_hdl);
-}
+}*/
 
 // Set up deep sleep parameters and timer to wake periodically to check for DAC
 void enter_deep_sleep_mode() {
@@ -562,7 +563,7 @@ static void esp_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
 
 }
 
-static void event_handler(void* arg, esp_event_base_t event_base,
+/*static void event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -604,7 +605,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 		}
 
 	}
-}
+}*/
 
 // Task for monitoring network activity during silence sleep mode
 TaskHandle_t network_monitor_task_handle = NULL;
@@ -702,7 +703,10 @@ void enter_silence_sleep_mode() {
     
     // Configure WiFi for max power saving
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
-    
+
+    // Suppress WiFi warnings (including "exceed max band" messages)
+    esp_log_level_set("wifi", ESP_LOG_ERROR);
+
     // Create network monitoring task if it doesn't exist yet
     if (network_monitor_task_handle == NULL) {
         BaseType_t ret = xTaskCreatePinnedToCore(
@@ -753,6 +757,9 @@ void exit_silence_sleep_mode() {
     
     // Set WiFi back to normal power saving mode
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
+
+    // Suppress WiFi warnings (including "exceed max band" messages)
+    esp_log_level_set("wifi", ESP_LOG_ERROR);
     
     // Reset silence tracking variables to prevent immediate re-entry into sleep mode
     is_silent = false;
@@ -842,10 +849,19 @@ void app_main(void)
                 // Initialize WiFi manager if it's not already initialized
                 wifi_manager_init();
                 
-                // Clear WiFi credentials
+                // Clear WiFi credentials from NVS
                 wifi_manager_clear_credentials();
                 
-                ESP_LOGI(TAG, "WiFi configuration reset complete. Rebooting...");
+                // Clear WiFi credentials from ESP's internal WiFi storage
+                esp_wifi_restore();
+                
+                // Reset all settings to defaults
+                config_manager_reset();
+                
+                // To be extra safe, erase the entire NVS (all namespaces)
+                nvs_flash_erase();
+                
+                ESP_LOGI(TAG, "All settings reset to defaults. Rebooting...");
                 vTaskDelay(pdMS_TO_TICKS(1000)); // Wait 1 second for logs to be printed
                 esp_restart(); // Restart the ESP32
             }
@@ -946,6 +962,13 @@ void app_main(void)
     
     // Enable WiFi power save mode
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
+
+    // Suppress WiFi warnings (including "exceed max band" messages)
+    esp_log_level_set("wifi", ESP_LOG_ERROR);
+    
+    // Initialize configuration manager
+    ESP_LOGI(TAG, "Initializing configuration manager");
+    ESP_ERROR_CHECK(config_manager_init());
     
     setup_buffer();
     setup_audio();
@@ -973,16 +996,20 @@ void wifi_init_sta(void)
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_BSS_RSSI_LOW,
                                               &esp_bss_rssi_low_handler, NULL));
     
-    // Start the WiFi manager - this will either:
+    // Try to connect to the strongest network first
+    esp_err_t ret = wifi_manager_connect_to_strongest();
+    
+    // If connecting to strongest network fails, fall back to normal behavior:
     // 1. Connect using stored credentials if available
     // 2. Start AP mode with captive portal if no credentials are stored
-    ESP_ERROR_CHECK(wifi_manager_start());
-    
-    // If in AP mode, start the web server for configuration
-    if (wifi_manager_get_state() == WIFI_MANAGER_STATE_AP_MODE) {
-        ESP_LOGI(TAG, "Starting web server for WiFi configuration");
-        web_server_start();
+    if (ret != ESP_OK) {
+        ESP_LOGI(TAG, "Could not connect to strongest network, falling back to stored credentials");
+        ESP_ERROR_CHECK(wifi_manager_start());
     }
+    
+    // Start the web server in both AP mode and STA (connected) mode
+    ESP_LOGI(TAG, "Starting web server for configuration");
+    web_server_start();
     
     ESP_LOGI(TAG, "WiFi initialization completed");
     

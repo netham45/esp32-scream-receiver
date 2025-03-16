@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "config_manager.h"
 #include <string.h>
 #include <inttypes.h>
 
@@ -116,6 +117,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
             wifi_event_sta_disconnected_t *disconn = event_data;
             
+            // Re-enable AP mode if it was hidden while connected
+            app_config_t* config = config_manager_get_config();
+            if (config->hide_ap_when_connected) {
+                ESP_LOGI(TAG, "Re-enabling AP interface after disconnection");
+                esp_wifi_set_mode(WIFI_MODE_APSTA);
+            }
+            
             if (s_retry_num < 5) {
                 ESP_LOGI(TAG, "Failed to connect to AP (attempt %d/5), reason: %" PRIu16, 
                         s_retry_num + 1, disconn->reason);
@@ -145,6 +153,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             s_retry_num = 0;
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
             s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTED;
+            
+            // If configured to hide AP when connected, disable AP interface
+            app_config_t* config = config_manager_get_config();
+            if (config->hide_ap_when_connected) {
+                ESP_LOGI(TAG, "Disabling AP interface when connected (as configured)");
+                esp_wifi_set_mode(WIFI_MODE_STA);
+            }
         }
     }
 }
@@ -179,19 +194,44 @@ esp_err_t wifi_manager_start(void) {
         
         nvs_close(nvs_handle);
         
-        // Configure WiFi station with the stored credentials
-        wifi_config_t wifi_sta_config = {0};
-        
-        strncpy((char*)wifi_sta_config.sta.ssid, ssid, sizeof(wifi_sta_config.sta.ssid));
-        strncpy((char*)wifi_sta_config.sta.password, password, sizeof(wifi_sta_config.sta.password));
-        
-        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
-        
-        // Temporarily disable AP
-        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-        
-        // Start WiFi
-        ESP_ERROR_CHECK(esp_wifi_start());
+    // Configure WiFi station with the stored credentials
+    wifi_config_t wifi_sta_config = {0};
+    
+    strncpy((char*)wifi_sta_config.sta.ssid, ssid, sizeof(wifi_sta_config.sta.ssid));
+    strncpy((char*)wifi_sta_config.sta.password, password, sizeof(wifi_sta_config.sta.password));
+    
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
+    
+    // Get AP password from config manager
+    app_config_t* config = config_manager_get_config();
+    const char* ap_password = config->ap_password;
+    
+    // Configure AP mode
+    wifi_config_t wifi_ap_config = {
+        .ap = {
+            .ssid = "",
+            .ssid_len = 0,
+            .channel = WIFI_AP_CHANNEL,
+            .max_connection = WIFI_AP_MAX_CONNECTIONS,
+            .authmode = strlen(ap_password) > 0 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN
+        },
+    };
+    
+    // Use custom AP SSID from config
+    strncpy((char*)wifi_ap_config.ap.ssid, config->ap_ssid, sizeof(wifi_ap_config.ap.ssid));
+    wifi_ap_config.ap.ssid_len = strlen(config->ap_ssid);
+    
+    // Copy password if provided
+    if (strlen(ap_password) > 0) {
+        strncpy((char*)wifi_ap_config.ap.password, ap_password, sizeof(wifi_ap_config.ap.password));
+    }
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_ap_config));
+    
+    // Use APSTA mode to have both interfaces active
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    
+    // Start WiFi
+    ESP_ERROR_CHECK(esp_wifi_start());
         
         // Wait for connection with timeout
         EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
@@ -230,26 +270,43 @@ esp_err_t wifi_manager_start(void) {
 static esp_err_t start_ap_mode(void) {
     ESP_LOGI(TAG, "Starting AP mode");
     
+    // Get AP password from config manager
+    app_config_t* config = config_manager_get_config();
+    const char* ap_password = config->ap_password;
+    
     // Configure AP
     wifi_config_t wifi_ap_config = {
         .ap = {
-            .ssid = WIFI_AP_SSID,
-            .password = WIFI_AP_PASSWORD,
-            .ssid_len = strlen(WIFI_AP_SSID),
+            .ssid = "",
+            .ssid_len = 0,
             .channel = WIFI_AP_CHANNEL,
             .max_connection = WIFI_AP_MAX_CONNECTIONS,
-            .authmode = strlen(WIFI_AP_PASSWORD) > 0 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN
+            .authmode = strlen(ap_password) > 0 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN
         },
     };
     
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    // Use custom AP SSID from config
+    strncpy((char*)wifi_ap_config.ap.ssid, config->ap_ssid, sizeof(wifi_ap_config.ap.ssid));
+    wifi_ap_config.ap.ssid_len = strlen(config->ap_ssid);
+    
+    // Copy password if provided
+    if (strlen(ap_password) > 0) {
+        strncpy((char*)wifi_ap_config.ap.password, ap_password, sizeof(wifi_ap_config.ap.password));
+        ESP_LOGI(TAG, "Using configured AP password (password protected)");
+    } else {
+        ESP_LOGI(TAG, "Using open AP (no password)");
+    }
+    
+    // Use APSTA mode instead of AP mode only to allow future STA connections 
+    // without disabling the AP
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_ap_config));
     ESP_ERROR_CHECK(esp_wifi_start());
     
     // Update state
     s_wifi_manager_state = WIFI_MANAGER_STATE_AP_MODE;
     
-    ESP_LOGI(TAG, "AP started with SSID: %s", WIFI_AP_SSID);
+    ESP_LOGI(TAG, "AP started with SSID: %s", config->ap_ssid);
     
     // Web server will be started by the web_server module
     
@@ -426,17 +483,29 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password) {
         strncpy((char*)wifi_sta_config.sta.password, password, sizeof(wifi_sta_config.sta.password));
     }
     
-    // Configure AP mode (use default settings)
+    // Get AP password from config manager
+    app_config_t* config = config_manager_get_config();
+    const char* ap_password = config->ap_password;
+    
+    // Configure AP mode
     wifi_config_t wifi_ap_config = {
         .ap = {
-            .ssid = WIFI_AP_SSID,
-            .password = WIFI_AP_PASSWORD,
-            .ssid_len = strlen(WIFI_AP_SSID),
+            .ssid = "",
+            .ssid_len = 0,
             .channel = WIFI_AP_CHANNEL,
             .max_connection = WIFI_AP_MAX_CONNECTIONS,
-            .authmode = strlen(WIFI_AP_PASSWORD) > 0 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN
+            .authmode = strlen(ap_password) > 0 ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN
         },
     };
+    
+    // Use custom AP SSID from config
+    strncpy((char*)wifi_ap_config.ap.ssid, config->ap_ssid, sizeof(wifi_ap_config.ap.ssid));
+    wifi_ap_config.ap.ssid_len = strlen(config->ap_ssid);
+    
+    // Copy password if provided
+    if (strlen(ap_password) > 0) {
+        strncpy((char*)wifi_ap_config.ap.password, ap_password, sizeof(wifi_ap_config.ap.password));
+    }
     
     // Set APSTA mode (both AP and STA active)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
@@ -470,6 +539,136 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password) {
         // Start AP mode again
         start_ap_mode();
         return ESP_ERR_TIMEOUT;
+    }
+}
+
+/**
+ * Connect to strongest available network
+ */
+esp_err_t wifi_manager_connect_to_strongest(void) {
+    ESP_LOGI(TAG, "Scanning and connecting to strongest network");
+    
+    // First, stop current WiFi connection if any
+    esp_wifi_disconnect();
+    
+    // Set APSTA mode and start WiFi if not already started
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    
+    // Try to start WiFi
+    esp_err_t err = esp_wifi_start();
+    if (err != ESP_OK && err == ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGE(TAG, "Failed to start WiFi: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    // Clear the status bits
+    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    
+    // Scan for networks - use maximum scan results (30 is a reasonable limit)
+    #define MAX_SCAN_RESULTS 30
+    wifi_network_info_t networks[MAX_SCAN_RESULTS];
+    size_t networks_found = 0;
+    
+    esp_err_t ret = wifi_manager_scan_networks(networks, MAX_SCAN_RESULTS, &networks_found);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to scan networks: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    if (networks_found == 0) {
+        ESP_LOGI(TAG, "No networks found");
+        return ESP_FAIL;
+    }
+    
+    // Find the strongest open or WPA2 network
+    int strongest_index = -1;
+    int strongest_rssi = -128; // Minimum possible RSSI
+    
+    for (int i = 0; i < networks_found; i++) {
+        // Skip enterprise networks or other complex auth modes
+        if (networks[i].authmode == WIFI_AUTH_OPEN || 
+            networks[i].authmode == WIFI_AUTH_WPA_PSK ||
+            networks[i].authmode == WIFI_AUTH_WPA2_PSK ||
+            networks[i].authmode == WIFI_AUTH_WPA_WPA2_PSK) {
+            
+            // Check if this network has stronger signal
+            if (networks[i].rssi > strongest_rssi) {
+                strongest_rssi = networks[i].rssi;
+                strongest_index = i;
+            }
+        }
+    }
+    
+    if (strongest_index == -1) {
+        ESP_LOGI(TAG, "No compatible networks found");
+        return ESP_FAIL;
+    }
+    
+    // Connect to the strongest network
+    ESP_LOGI(TAG, "Connecting to strongest network: %s (RSSI: %d)", 
+             networks[strongest_index].ssid, networks[strongest_index].rssi);
+    
+    // Configure WiFi station with the strongest network
+    wifi_config_t wifi_sta_config = {0};
+    
+    strncpy((char*)wifi_sta_config.sta.ssid, networks[strongest_index].ssid, sizeof(wifi_sta_config.sta.ssid));
+    
+    // For open networks, leave password empty
+    if (networks[strongest_index].authmode != WIFI_AUTH_OPEN) {
+        // For non-open networks, we need to know the password
+        // For now, we'll try to use any stored password for this SSID
+        
+        nvs_handle_t nvs_handle;
+        char password[WIFI_PASSWORD_MAX_LENGTH + 1] = {0};
+        bool has_password = false;
+        
+        if (nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
+            size_t required_size = sizeof(password);
+            if (nvs_get_str(nvs_handle, WIFI_NVS_KEY_PASSWORD, password, &required_size) == ESP_OK) {
+                has_password = true;
+            }
+            nvs_close(nvs_handle);
+        }
+        
+        if (has_password) {
+            strncpy((char*)wifi_sta_config.sta.password, password, sizeof(wifi_sta_config.sta.password));
+        } else {
+            // Skip non-open networks if we don't have passwords for them
+            ESP_LOGI(TAG, "Can't connect to %s: no password available", networks[strongest_index].ssid);
+            
+            // Try the next strongest network
+            return ESP_FAIL;
+        }
+    }
+    
+    // Update WiFi configuration
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
+    
+    // Connect to the network
+    ESP_ERROR_CHECK(esp_wifi_connect());
+    
+    // Update state
+    s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTING;
+    
+    // Wait for connection with timeout
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                                        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                        pdFALSE,
+                                        pdFALSE,
+                                        pdMS_TO_TICKS(WIFI_CONNECTION_TIMEOUT_MS));
+    
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to strongest network: %s", networks[strongest_index].ssid);
+        s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTED;
+        
+        // Save the credentials for future use
+        wifi_manager_save_credentials(networks[strongest_index].ssid, 
+                                     (char*)wifi_sta_config.sta.password);
+        
+        return ESP_OK;
+    } else {
+        ESP_LOGI(TAG, "Failed to connect to strongest network: %s", networks[strongest_index].ssid);
+        return ESP_FAIL;
     }
 }
 

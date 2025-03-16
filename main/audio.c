@@ -1,5 +1,6 @@
 #include "global.h"
 #include "buffer.h"
+#include "config_manager.h"
 #include "freertos/FreeRTOS.h"
 #include <inttypes.h>
 #include "freertos/task.h"
@@ -27,14 +28,19 @@ void resume_playback() {
 #ifdef IS_USB
     // Only try to resume if we have a valid DAC handle
     if (spkr_handle != NULL) {
+        // Get current configuration
+        app_config_t *config = config_manager_get_config();
+        
         uac_host_stream_config_t stm_config = {
             .channels = 2,
-            .bit_resolution = 16,
-            .sample_freq = 48000,
+            .bit_resolution = config->bit_depth,
+            .sample_freq = config->sample_rate,
         };
-        ESP_LOGI(TAG, "Resume Playback with DAC");
+        ESP_LOGI(TAG, "Resume Playback with DAC (SR: %" PRIu32 ", BD: %" PRIu8 ")", 
+                 config->sample_rate, config->bit_depth);
+        
         ESP_ERROR_CHECK(uac_host_device_start(spkr_handle, &stm_config));
-        ESP_ERROR_CHECK(uac_host_device_set_volume(spkr_handle, volume));
+        ESP_ERROR_CHECK(uac_host_device_set_volume(spkr_handle, config->volume * 100.0f));
         playing = true;
     } else {
         ESP_LOGI(TAG, "Cannot resume playback - No DAC connected");
@@ -123,8 +129,9 @@ void pcm_handler(void*) {
                   ESP_LOGI(TAG, "Silence duration: %" PRIu32 " ms", silence_duration_ms);
               }
               
-              // Check if silence threshold is reached
-              if (silence_duration_ms >= SILENCE_THRESHOLD_MS) {
+              // Check if silence threshold is reached - use config value
+              app_config_t *config = config_manager_get_config();
+              if (silence_duration_ms >= config->silence_threshold_ms) {
                   ESP_LOGI(TAG, "Silence threshold reached (%" PRIu32 " ms), entering sleep mode", 
                           silence_duration_ms);
                   
@@ -139,7 +146,10 @@ void pcm_handler(void*) {
 
 void setup_audio() {
 #ifdef IS_SPDIF
-  spdif_init(48000);
+  // Get configuration for sample rate
+  app_config_t *config = config_manager_get_config();
+  spdif_init(config->sample_rate);
+  ESP_LOGI(TAG, "Initialized SPDIF with sample rate: %" PRIu32, config->sample_rate);
 #endif
   xTaskCreatePinnedToCore(pcm_handler, "pcm_handler", 16384, NULL, 1, NULL, 1);
 }

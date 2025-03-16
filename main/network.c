@@ -1,6 +1,7 @@
 #include "esp_wifi.h"                    // ESP IDF
 #include "global.h"
 #include "buffer.h"
+#include "config_manager.h"             // Added for configuration
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -44,10 +45,13 @@ void tcp_handler(void *);
 
 void tcp_handler(void *) {
   int connect_failure = 0;
+  // Get configuration
+  app_config_t *config = config_manager_get_config();
+  
   struct sockaddr_in dest_addr;
   inet_pton(AF_INET, server, &dest_addr.sin_addr);
   dest_addr.sin_family = AF_INET;
-  dest_addr.sin_port = htons(PORT);
+  dest_addr.sin_port = htons(config->port);
   int sock =  socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
   const int ip_precedence_vi = 6;
   const int ip_precedence_offset = 5;
@@ -106,10 +110,13 @@ void udp_handler(void *) {
 	uint16_t datahead = 0;
 	empty_buffer();
     while (1) {
+		// Get configuration
+		app_config_t *config = config_manager_get_config();
+		
 		struct sockaddr_in dest_addr_ip4;
 		dest_addr_ip4.sin_addr.s_addr = htonl(INADDR_ANY);
 		dest_addr_ip4.sin_family = AF_INET;
-		dest_addr_ip4.sin_port = htons(PORT);
+		dest_addr_ip4.sin_port = htons(config->port);
 
         int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
 	    const int ip_precedence_vi = 6;
@@ -126,7 +133,7 @@ void udp_handler(void *) {
         if (err < 0) {
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         }
-        ESP_LOGI(TAG, "Socket bound, port %" PRIu16, PORT);
+        ESP_LOGI(TAG, "Socket bound, port %" PRIu16, config->port);
         
         // Only try to resume playback if we're not in sleep mode
         if (!device_sleeping) {

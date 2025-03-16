@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Scream Receiver</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32 Scream Receiver</h1>
+        
+        <div class="current-info">
+            <div><strong>Device:</strong> {{DEVICE_NAME}}</div>
+            <div><strong>Current SSID:</strong> {{CURRENT_SSID}}</div>
+            <div><strong>Status:</strong> <span id="connection-status" class="status">{{CONNECTION_STATUS}}</span></div>
+        </div>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="openTab(event, 'wifi-tab')">WiFi Setup</div>
+            <div class="tab" onclick="openTab(event, 'settings-tab')">Device Settings</div>
+        </div>
+        
+        <div id="wifi-tab" class="tab-content active">
+            <form id="wifi-form" onsubmit="saveConfiguration(event)">
+                <label for="ssid">WiFi Network:</label>
+                <input type="text" id="ssid" name="ssid" autocomplete="off">
+                
+                <label for="password">Password:</label>
+                <div class="password-field">
+                    <input type="password" id="password" name="password">
+                    <span class="password-toggle" onclick="togglePassword()">Show</span>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit">Connect</button>
+                    <div>
+                        <button id="scan-button" type="button" class="secondary" onclick="startScan(event)">Scan Networks</button>
+                        <button type="button" class="secondary" onclick="forgetNetwork()">Reset All</button>
+                    </div>
+                </div>
+            </form>
+            
+            <div id="alert-message" class="alert hidden"></div>
+            <div id="success-message" class="success hidden"></div>
+            
+            <div id="status-check-container" class="hidden">
+                <p><span class="spinner"></span> Checking connection status...</p>
+                <button id="check-status-button" type="button" onclick="checkConnectionStatus()">Check Status</button>
+            </div>
+            
+            <div id="scanning-info" class="hidden">
+                <p><span class="spinner"></span> Scanning for networks...</p>
+            </div>
+            
+            <div class="network-list" id="network-list"></div>
+        </div>
+        
+        <div id="settings-tab" class="tab-content">
+            <form id="settings-form" onsubmit="saveSettings(event)">
+                <div class="settings-group">
+                    <h2>Network Settings</h2>
+                    <div class="form-row">
+                        <label for="port">UDP Port:</label>
+                        <input type="number" id="port" name="port" min="1" max="65535">
+                        <p class="setting-description">Port used for receiving Scream audio data (default: 4010).</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="ap_ssid">AP SSID:</label>
+                        <input type="text" id="ap_ssid" name="ap_ssid" maxlength="32">
+                        <p class="setting-description">Name of the access point when in setup mode (default: ESP32-Scream).</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="ap_password">AP Password:</label>
+                        <input type="text" id="ap_password" name="ap_password" maxlength="64">
+                        <p class="setting-description">Password for the ESP32's access point.</p>
+                    </div>
+                    <div class="form-row checkbox-row">
+                        <label for="hide_ap_when_connected">Hide AP when connected:</label>
+                        <input type="checkbox" id="hide_ap_when_connected" name="hide_ap_when_connected">
+                        <p class="setting-description">When enabled, the AP network is only visible when not connected to WiFi.</p>
+                    </div>
+                </div>
+                
+                <div class="settings-group">
+                    <h2>Buffer Settings</h2>
+                    <div class="form-row">
+                        <label for="initial_buffer_size">Initial Buffer Size:</label>
+                        <input type="number" id="initial_buffer_size" name="initial_buffer_size" min="1" max="255">
+                        <p class="setting-description">Number of audio chunks to buffer before playback starts. Higher values create more latency but improve stability.</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="buffer_grow_step_size">Buffer Grow Step Size:</label>
+                        <input type="number" id="buffer_grow_step_size" name="buffer_grow_step_size" min="0" max="255">
+                        <p class="setting-description">Number of chunks to add to buffer after an underflow. Set to 0 to disable automatic buffer growth.</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="max_buffer_size">Max Buffer Size:</label>
+                        <input type="number" id="max_buffer_size" name="max_buffer_size" min="1" max="255">
+                        <p class="setting-description">Maximum number of chunks that can be buffered before packets are dropped.</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="max_grow_size">Max Grow Size:</label>
+                        <input type="number" id="max_grow_size" name="max_grow_size" min="1" max="255">
+                        <p class="setting-description">Maximum target size for buffer when automatically growing.</p>
+                    </div>
+                </div>
+                
+                <div class="settings-group">
+                    <h2>Audio Settings</h2>
+                    <div class="form-row">
+                        <label for="sample_rate">Sample Rate (Hz):</label>
+                        <input type="number" id="sample_rate" name="sample_rate" min="8000" max="192000" step="1000">
+                        <p class="setting-description">Audio sample rate in Hz (typical values: 44100, 48000). Must match Scream sender settings.</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="bit_depth">Bit Depth:</label>
+                        <input type="number" id="bit_depth" name="bit_depth" min="16" max="16" step="16" readonly>
+                        <p class="setting-description">Bit depth of audio (Only 16 is supported). Must match Scream sender settings.</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="volume">Volume (0-1):</label>
+                        <input type="number" id="volume" name="volume" min="0" max="1" step="0.05">
+                        <p class="setting-description">Audio output volume (0.0 = mute, 1.0 = full volume).</p>
+                    </div>
+                </div>
+                
+                <div class="settings-group">
+                    <h2>Sleep Settings</h2>
+                    <div class="form-row" style="display:none">
+                        <label for="silence_threshold_ms">Silence Threshold (ms):</label>
+                        <input type="number" id="silence_threshold_ms" name="silence_threshold_ms" min="0" max="60000">
+                        <p class="setting-description">Time of silence before device enters power-saving sleep mode (0 to disable).</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="network_check_interval_ms">Network Check Interval (ms):</label>
+                        <input type="number" id="network_check_interval_ms" name="network_check_interval_ms" min="10" max="10000">
+                        <p class="setting-description">How often to check for network activity during light sleep.</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="activity_threshold_packets">Activity Threshold Packets:</label>
+                        <input type="number" id="activity_threshold_packets" name="activity_threshold_packets" min="1" max="255">
+                        <p class="setting-description">Number of detected network packets required to wake the device from sleep.</p>
+                    </div>
+                    <div class="form-row" style="display:none">
+                        <label for="silence_amplitude_threshold">Silence Amplitude Threshold:</label>
+                        <input type="number" id="silence_amplitude_threshold" name="silence_amplitude_threshold" min="0" max="65535">
+                        <p class="setting-description">Audio level below which is considered silence (0-32767). Lower values are more sensitive.</p>
+                    </div>
+                    <div class="form-row">
+                        <label for="network_inactivity_timeout_ms">Network Inactivity Timeout (ms):</label>
+                        <input type="number" id="network_inactivity_timeout_ms" name="network_inactivity_timeout_ms" min="1000" max="60000">
+                        <p class="setting-description">Enter sleep mode after no network packets for this duration.</p>
+                    </div>
+                </div>
+                
+                <div class="button-group">
+                    <button type="submit">Save Settings</button>
+                    <button type="button" class="secondary" onclick="loadSettings()">Reset Changes</button>
+                </div>
+            </form>
+            
+            <div id="settings-alert" class="alert hidden"></div>
+            <div id="settings-success" class="success hidden"></div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>

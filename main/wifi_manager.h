@@ -5,8 +5,6 @@
 #include <stdbool.h>
 
 // Configuration for WiFi AP mode
-#define WIFI_AP_SSID "ESP32-Scream"
-#define WIFI_AP_PASSWORD ""  // Empty password for open networks
 #define WIFI_AP_CHANNEL 1
 #define WIFI_AP_MAX_CONNECTIONS 4
 
@@ -112,3 +110,14 @@ esp_err_t wifi_manager_get_current_ssid(char *ssid, size_t max_length);
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t wifi_manager_scan_networks(wifi_network_info_t *networks, size_t max_networks, size_t *networks_found);
+
+/**
+ * @brief Scan and connect to the strongest available WiFi network
+ * 
+ * Scans all channels and attempts to connect to the strongest compatible network.
+ * Only connects to open, WPA, WPA2, or WPA/WPA2 networks. For networks requiring
+ * a password, it will only connect if the password is already stored in NVS.
+ * 
+ * @return esp_err_t ESP_OK on success, ESP_FAIL if no compatible networks or connection fails
+ */
+esp_err_t wifi_manager_connect_to_strongest(void);

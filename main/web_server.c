@@ -1,6 +1,41 @@
 #include "web_server.h"
 #include "wifi_manager.h"
-#include "html_content.h"
+#include "config_manager.h"
+
+// External function from audio.c to apply volume changes
+extern void resume_playback(void);
+
+// External declarations for embedded web files
+extern const uint8_t index_html_start[] asm("_binary_index_html_start");
+extern const uint8_t index_html_end[] asm("_binary_index_html_end");
+extern const uint8_t styles_css_start[] asm("_binary_styles_css_start");
+extern const uint8_t styles_css_end[] asm("_binary_styles_css_end");
+extern const uint8_t script_js_start[] asm("_binary_script_js_start");
+extern const uint8_t script_js_end[] asm("_binary_script_js_end");
+
+// Simple HTML for redirecting to captive portal
+const char html_redirect[] = 
+"<!DOCTYPE html>\n"
+"<html>\n"
+"<head>\n"
+"    <meta http-equiv=\"refresh\" content=\"0;URL='/'\">\n"
+"</head>\n"
+"<body>\n"
+"    <p>Redirecting to captive portal...</p>\n"
+"</body>\n"
+"</html>\n";
+
+// HTML for Apple Captive Network Assistant detection
+const char html_apple_cna[] = 
+"<!DOCTYPE html>\n"
+"<html>\n"
+"<head>\n"
+"    <title>Success</title>\n"
+"</head>\n"
+"<body>\n"
+"    <h1>Success</h1>\n"
+"</body>\n"
+"</html>\n";
 #include "esp_log.h"
 #include "esp_http_server.h"
 #include "esp_wifi.h"
@@ -28,6 +63,8 @@ static httpd_handle_t s_httpd_handle = NULL;
 static esp_err_t root_get_handler(httpd_req_t *req);
 static esp_err_t scan_get_handler(httpd_req_t *req);
 static esp_err_t status_get_handler(httpd_req_t *req);
+static esp_err_t settings_get_handler(httpd_req_t *req);
+static esp_err_t settings_post_handler(httpd_req_t *req);
 static esp_err_t connect_post_handler(httpd_req_t *req);
 static esp_err_t reset_post_handler(httpd_req_t *req);
 static esp_err_t redirect_get_handler(httpd_req_t *req);
@@ -86,8 +123,8 @@ static void stop_dns_server(void)
  */
 static void dns_server_task(void *pvParameters)
 {
-    char rx_buffer[512];
-    char tx_buffer[512];
+    uint8_t rx_buffer[512];
+    uint8_t tx_buffer[512];
     struct sockaddr_in client_addr;
     socklen_t client_addr_len = sizeof(client_addr);
     
@@ -109,6 +146,9 @@ static void dns_server_task(void *pvParameters)
             continue;
         }
         
+        // Log DNS request details (for debugging)
+        ESP_LOGD(TAG, "Received DNS query of length %d", len);
+        
         // Prepare DNS response
         // Copy the request header and modify it for response
         memcpy(tx_buffer, rx_buffer, len);
@@ -116,16 +156,19 @@ static void dns_server_task(void *pvParameters)
         // Set the response bit (QR)
         tx_buffer[2] |= 0x80;
         
-        // Set authoritative answer bit
+        // Set authoritative answer bit (AA)
         tx_buffer[2] |= 0x04;
         
-        // Set the response code to 0 (no error)
+        // Clear the recursion available bit (RA)
+        tx_buffer[3] |= 0x80;
+        
+        // Set the response code to 0 (no error) - clear the lower 4 bits of byte 3
         tx_buffer[3] &= 0xF0;
         
-        // Count the number of queries
+        // Get the number of queries
         uint16_t query_count = (rx_buffer[4] << 8) | rx_buffer[5];
         
-        // Set answer count to query count
+        // Set answer count equal to query count
         tx_buffer[6] = rx_buffer[4];
         tx_buffer[7] = rx_buffer[5];
         
@@ -135,46 +178,75 @@ static void dns_server_task(void *pvParameters)
         tx_buffer[10] = 0;
         tx_buffer[11] = 0;
         
-        // Skip the header (12 bytes) to process queries
+        // Track position in the response buffer
         int response_len = len;
-        int query_end = 12; // Start of queries
+        
+        // Find end of each query to add answers
+        int query_pos = 12; // Start position of the queries section
         
         // Process all queries
-        for (int i = 0; i < query_count && query_end < len; i++) {
-            // Skip the query name
-            while (query_end < len && rx_buffer[query_end] != 0) {
-                query_end += rx_buffer[query_end] + 1;
+        for (int i = 0; i < query_count && query_pos < len; i++) {
+            // Find the end of the domain name
+            int question_start = query_pos;
+            
+            // Print domain being queried for debugging
+            char domain_name[256] = {0};
+            int domain_pos = 0;
+            int current_pos = query_pos;
+            
+            while (current_pos < len && rx_buffer[current_pos] != 0) {
+                uint8_t label_len = rx_buffer[current_pos++];
+                for (int j = 0; j < label_len && current_pos < len; j++) {
+                    domain_name[domain_pos++] = rx_buffer[current_pos++];
+                }
+                if (rx_buffer[current_pos] != 0) {
+                    domain_name[domain_pos++] = '.';
+                }
             }
-            query_end += 5; // Skip null byte and query type/class
+            domain_name[domain_pos] = '\0';
+            ESP_LOGI(TAG, "DNS Query for domain: %s", domain_name);
             
-            // Add answer section for this query
-            // Pointer to the query name
-            tx_buffer[response_len++] = 0xC0;
-            tx_buffer[response_len++] = 0x0C;
+            // Skip the domain name
+            while (query_pos < len && rx_buffer[query_pos] != 0) {
+                query_pos += rx_buffer[query_pos] + 1;
+            }
+            query_pos++; // Skip the terminating zero length
             
-            // Type: A record (0x0001)
-            tx_buffer[response_len++] = 0x00;
-            tx_buffer[response_len++] = 0x01;
+            // Skip QTYPE and QCLASS (4 bytes)
+            uint16_t qtype = (rx_buffer[query_pos] << 8) | rx_buffer[query_pos + 1];
+            query_pos += 4;
             
-            // Class: IN (0x0001)
-            tx_buffer[response_len++] = 0x00;
-            tx_buffer[response_len++] = 0x01;
-            
-            // TTL: 60 seconds
-            tx_buffer[response_len++] = 0x00;
-            tx_buffer[response_len++] = 0x00;
-            tx_buffer[response_len++] = 0x00;
-            tx_buffer[response_len++] = 0x3C;
-            
-            // Data length: 4 bytes (IP address)
-            tx_buffer[response_len++] = 0x00;
-            tx_buffer[response_len++] = 0x04;
-            
-            // IP address: 192.168.4.1 (AP's IP)
-            tx_buffer[response_len++] = 192;
-            tx_buffer[response_len++] = 168;
-            tx_buffer[response_len++] = 4;
-            tx_buffer[response_len++] = 1;
+            // Only respond to A record queries
+            if (qtype == 1) { // 1 = A record
+                // Add answer section
+                // NAME: pointer to the domain name in the question
+                tx_buffer[response_len++] = 0xC0; // Compression pointer
+                tx_buffer[response_len++] = 0x0C; // Pointer to position 12 (start of queries)
+                
+                // TYPE: A record (0x0001)
+                tx_buffer[response_len++] = 0x00;
+                tx_buffer[response_len++] = 0x01;
+                
+                // CLASS: IN (0x0001)
+                tx_buffer[response_len++] = 0x00;
+                tx_buffer[response_len++] = 0x01;
+                
+                // TTL: 300 seconds (5 minutes)
+                tx_buffer[response_len++] = 0x00;
+                tx_buffer[response_len++] = 0x00;
+                tx_buffer[response_len++] = 0x01;
+                tx_buffer[response_len++] = 0x2C;
+                
+                // RDLENGTH: 4 bytes for IPv4 address
+                tx_buffer[response_len++] = 0x00;
+                tx_buffer[response_len++] = 0x04;
+                
+                // RDATA: IP address (192.168.4.1)
+                tx_buffer[response_len++] = 192;
+                tx_buffer[response_len++] = 168;
+                tx_buffer[response_len++] = 4;
+                tx_buffer[response_len++] = 1;
+            }
         }
         
         // Send the response
@@ -183,6 +255,8 @@ static void dns_server_task(void *pvParameters)
         
         if (sent < 0) {
             ESP_LOGE(TAG, "DNS send error: %d", errno);
+        } else {
+            ESP_LOGD(TAG, "Sent DNS response, length: %d", sent);
         }
     }
     
@@ -193,16 +267,27 @@ static void dns_server_task(void *pvParameters)
 /**
  * Replace placeholders in HTML template with actual values
  */
-static char* html_replace_placeholders(const char* template_html)
+static char* html_replace_placeholders(const char* template_html, size_t template_len)
 {
-    // Allocate buffer for the filled-in HTML
-    char* html = malloc(strlen(template_html) + 512); // Add extra space for replacements
-    if (!html) {
+    // Create a null-terminated string from the embedded HTML file
+    char *original_html = malloc(template_len + 1);
+    if (!original_html) {
         ESP_LOGE(TAG, "Failed to allocate memory for HTML template");
         return NULL;
     }
+    memcpy(original_html, template_html, template_len);
+    original_html[template_len] = '\0';
     
-    strcpy(html, template_html);
+    // Allocate buffer for the filled-in HTML
+    char* html = malloc(template_len + 512); // Add extra space for replacements
+    if (!html) {
+        ESP_LOGE(TAG, "Failed to allocate memory for HTML template");
+        free(original_html);
+        return NULL;
+    }
+    
+    strcpy(html, original_html);
+    free(original_html);
     
     // Replace device name
     const char* device_name = "ESP32 Scream Receiver";
@@ -236,11 +321,27 @@ static char* html_replace_placeholders(const char* template_html)
         }
     }
     
-    // Replace connection status
+    // Replace connection status with status and IP if connected
     const char* status;
-    switch (wifi_manager_get_state()) {
+    char status_with_ip[64] = {0};
+    
+    wifi_manager_state_t state = wifi_manager_get_state();
+    switch (state) {
         case WIFI_MANAGER_STATE_CONNECTED:
-            status = "Connected";
+            // If connected, include the IP address in the status
+            {
+                esp_netif_ip_info_t ip_info;
+                esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+                if (netif && esp_netif_get_ip_info(netif, &ip_info) == ESP_OK) {
+                    char ip_str[16];
+                    snprintf(ip_str, sizeof(ip_str), IPSTR, IP2STR(&ip_info.ip));
+                    snprintf(status_with_ip, sizeof(status_with_ip), 
+                            "Connected (IP: %s)", ip_str);
+                    status = status_with_ip;
+                } else {
+                    status = "Connected";
+                }
+            }
             break;
         case WIFI_MANAGER_STATE_CONNECTING:
             status = "Connecting...";
@@ -249,7 +350,7 @@ static char* html_replace_placeholders(const char* template_html)
             status = "Connection failed";
             break;
         case WIFI_MANAGER_STATE_AP_MODE:
-            status = "Access Point Mode";
+            status = "Access Point Mode (192.168.4.1)";
             break;
         default:
             status = "Unknown";
@@ -273,14 +374,17 @@ static char* html_replace_placeholders(const char* template_html)
 }
 
 /**
- * GET handler for the root page
+ * GET handler for the root page (index.html)
  */
 static esp_err_t root_get_handler(httpd_req_t *req)
 {
     ESP_LOGI(TAG, "Handling GET request for /");
     
+    // Get the size of the embedded index.html file
+    size_t index_html_size = index_html_end - index_html_start;
+    
     // Fill in the HTML template with actual values
-    char* html = html_replace_placeholders(html_config_page);
+    char* html = html_replace_placeholders((const char*)index_html_start, index_html_size);
     if (!html) {
         return httpd_resp_send_500(req);
     }
@@ -293,6 +397,40 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     
     // Free the allocated memory
     free(html);
+    
+    return ret;
+}
+
+/**
+ * GET handler for the CSS file (styles.css)
+ */
+static esp_err_t css_get_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "Handling GET request for /styles.css");
+    
+    // Set content type
+    httpd_resp_set_type(req, "text/css");
+    
+    // Send the CSS file
+    size_t css_size = styles_css_end - styles_css_start;
+    esp_err_t ret = httpd_resp_send(req, (const char*)styles_css_start, css_size);
+    
+    return ret;
+}
+
+/**
+ * GET handler for the JavaScript file (script.js)
+ */
+static esp_err_t js_get_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "Handling GET request for /script.js");
+    
+    // Set content type
+    httpd_resp_set_type(req, "application/javascript");
+    
+    // Send the JavaScript file
+    size_t js_size = script_js_end - script_js_start;
+    esp_err_t ret = httpd_resp_send(req, (const char*)script_js_start, js_size);
     
     return ret;
 }
@@ -321,8 +459,38 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
     
-    // Add networks to JSON array
+    // Deduplicate networks in-place - O(n²) but with no extra memory usage
+    // Mark duplicates by setting their SSID to empty string
     for (size_t i = 0; i < networks_found; i++) {
+        // Skip if this network is already marked as a duplicate or has an empty SSID
+        if (strlen(networks[i].ssid) == 0) {
+            continue;
+        }
+        
+        // Look for duplicates of this network
+        for (size_t j = i + 1; j < networks_found; j++) {
+            if (strlen(networks[j].ssid) > 0 && strcmp(networks[i].ssid, networks[j].ssid) == 0) {
+                // Same SSID - keep the one with stronger signal
+                if (networks[j].rssi > networks[i].rssi) {
+                    // j has stronger signal, copy to i and mark j as duplicate
+                    networks[i].rssi = networks[j].rssi;
+                    networks[i].authmode = networks[j].authmode;
+                    networks[j].ssid[0] = '\0'; // Mark as duplicate
+                } else {
+                    // i has stronger signal, mark j as duplicate
+                    networks[j].ssid[0] = '\0'; // Mark as duplicate
+                }
+            }
+        }
+    }
+    
+    // Add networks to JSON array (only the non-duplicates)
+    for (size_t i = 0; i < networks_found; i++) {
+        // Skip networks marked as duplicates (empty SSID)
+        if (strlen(networks[i].ssid) == 0) {
+            continue;
+        }
+        
         cJSON *network = cJSON_CreateObject();
         if (!network) {
             continue;
@@ -355,6 +523,12 @@ static esp_err_t scan_get_handler(httpd_req_t *req)
     
     return ret;
 }
+
+// External declarations for deep sleep functionality
+extern void enter_deep_sleep_mode(void);
+#ifdef IS_USB
+extern uac_host_device_handle_t s_spk_dev_handle; // DAC handle from usb_audio_player_main.c
+#endif
 
 /**
  * POST handler for connecting to a WiFi network
@@ -473,6 +647,9 @@ static esp_err_t connect_post_handler(httpd_req_t *req)
     
     ESP_LOGI(TAG, "Connecting to SSID: %s", ssid);
     
+    // Check if this is the first time an SSID is being saved
+    bool first_time_config = !wifi_manager_has_credentials();
+    
     // Save the credentials to NVS and try to connect
     wifi_manager_connect(ssid, password);
     
@@ -480,6 +657,28 @@ static esp_err_t connect_post_handler(httpd_req_t *req)
     // The client will be redirected when the device restarts or changes mode
     httpd_resp_set_type(req, "text/plain");
     httpd_resp_sendstr(req, "OK");
+    
+    // If this is the first time setting up WiFi and no DAC is connected,
+    // put the device into deep sleep mode after a short delay
+    if (first_time_config) {
+        ESP_LOGI(TAG, "First-time WiFi configuration detected");
+        
+#ifdef IS_USB
+        // Check if a DAC is connected (s_spk_dev_handle is NULL when no DAC is connected)
+        if (s_spk_dev_handle == NULL) {
+            ESP_LOGI(TAG, "No DAC connected after initial WiFi setup, preparing for deep sleep");
+            // Give a small delay for web request to complete and logs to be sent
+            vTaskDelay(pdMS_TO_TICKS(2000));
+            // Go to deep sleep
+            enter_deep_sleep_mode();
+        } else {
+            ESP_LOGI(TAG, "DAC is connected, staying awake after WiFi setup");
+        }
+#else
+        // If USB support is not enabled, we don't check for DAC
+        ESP_LOGI(TAG, "USB support not enabled, staying awake after WiFi setup");
+#endif
+    }
     
     return ESP_OK;
 }
@@ -496,6 +695,15 @@ static esp_err_t reset_post_handler(httpd_req_t *req)
     if (err != ESP_OK) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to reset WiFi configuration");
         return ESP_FAIL;
+    }
+    
+    // Reset app configuration to defaults
+    err = config_manager_reset();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to reset app configuration: %s", esp_err_to_name(err));
+        // Continue anyway, WiFi reset is more important
+    } else {
+        ESP_LOGI(TAG, "App configuration reset to defaults");
     }
     
     // Start AP mode
@@ -607,6 +815,250 @@ static esp_err_t status_get_handler(httpd_req_t *req)
 }
 
 /**
+ * GET handler for device settings
+ */
+static esp_err_t settings_get_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "Handling GET request for /api/settings");
+    
+    // Get the current configuration
+    app_config_t *config = config_manager_get_config();
+    
+    // Create JSON response
+    cJSON *root = cJSON_CreateObject();
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create JSON response");
+        return ESP_FAIL;
+    }
+    
+    // Network settings
+    cJSON_AddNumberToObject(root, "port", config->port);
+    cJSON_AddStringToObject(root, "ap_ssid", config->ap_ssid);
+    cJSON_AddStringToObject(root, "ap_password", config->ap_password);
+    cJSON_AddBoolToObject(root, "hide_ap_when_connected", config->hide_ap_when_connected);
+    
+    // Buffer settings
+    cJSON_AddNumberToObject(root, "initial_buffer_size", config->initial_buffer_size);
+    cJSON_AddNumberToObject(root, "buffer_grow_step_size", config->buffer_grow_step_size);
+    cJSON_AddNumberToObject(root, "max_buffer_size", config->max_buffer_size);
+    cJSON_AddNumberToObject(root, "max_grow_size", config->max_grow_size);
+    
+    // Audio settings
+    cJSON_AddNumberToObject(root, "sample_rate", config->sample_rate);
+    cJSON_AddNumberToObject(root, "bit_depth", config->bit_depth);
+    cJSON_AddNumberToObject(root, "volume", config->volume);
+    
+    // Sleep settings
+    cJSON_AddNumberToObject(root, "silence_threshold_ms", config->silence_threshold_ms);
+    cJSON_AddNumberToObject(root, "network_check_interval_ms", config->network_check_interval_ms);
+    cJSON_AddNumberToObject(root, "activity_threshold_packets", config->activity_threshold_packets);
+    cJSON_AddNumberToObject(root, "silence_amplitude_threshold", config->silence_amplitude_threshold);
+    cJSON_AddNumberToObject(root, "network_inactivity_timeout_ms", config->network_inactivity_timeout_ms);
+    
+    // Convert JSON to string
+    char *json_str = cJSON_Print(root);
+    if (!json_str) {
+        cJSON_Delete(root);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create JSON string");
+        return ESP_FAIL;
+    }
+    
+    // Set content type
+    httpd_resp_set_type(req, "application/json");
+    
+    // Send the response
+    esp_err_t ret = httpd_resp_send(req, json_str, strlen(json_str));
+    
+    // Free allocated memory
+    free(json_str);
+    cJSON_Delete(root);
+    
+    return ret;
+}
+
+/**
+ * POST handler for updating device settings
+ */
+static esp_err_t settings_post_handler(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "Handling POST request for /api/settings");
+    
+    // Get content length
+    size_t content_len = req->content_len;
+    if (content_len >= 2048) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content too long");
+        return ESP_FAIL;
+    }
+    
+    // Read the data
+    char *buf = malloc(content_len + 1);
+    if (!buf) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+    
+    int ret = httpd_req_recv(req, buf, content_len);
+    if (ret <= 0) {
+        free(buf);
+        if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+            httpd_resp_send_408(req);
+        }
+        return ESP_FAIL;
+    }
+    buf[content_len] = '\0';
+    
+    // Parse the JSON data
+    cJSON *root = cJSON_Parse(buf);
+    free(buf); // We don't need the raw data anymore
+    
+    if (!root) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid JSON");
+        return ESP_FAIL;
+    }
+    
+    // Get the current configuration
+    app_config_t *config = config_manager_get_config();
+    
+    // Update configuration with new values if present
+    cJSON *port = cJSON_GetObjectItem(root, "port");
+    if (port && cJSON_IsNumber(port)) {
+        config->port = (uint16_t)port->valueint;
+    }
+    
+    // WiFi AP SSID
+    cJSON *ap_ssid = cJSON_GetObjectItem(root, "ap_ssid");
+    if (ap_ssid && cJSON_IsString(ap_ssid)) {
+        strncpy(config->ap_ssid, ap_ssid->valuestring, WIFI_SSID_MAX_LENGTH);
+        config->ap_ssid[WIFI_SSID_MAX_LENGTH] = '\0'; // Ensure null-termination
+    }
+    
+    // WiFi AP password
+    cJSON *ap_password = cJSON_GetObjectItem(root, "ap_password");
+    if (ap_password && cJSON_IsString(ap_password)) {
+        strncpy(config->ap_password, ap_password->valuestring, WIFI_PASSWORD_MAX_LENGTH);
+        config->ap_password[WIFI_PASSWORD_MAX_LENGTH] = '\0'; // Ensure null-termination
+    }
+    
+    // Hide AP when connected setting
+    cJSON *hide_ap_when_connected = cJSON_GetObjectItem(root, "hide_ap_when_connected");
+    if (hide_ap_when_connected && cJSON_IsBool(hide_ap_when_connected)) {
+        bool old_value = config->hide_ap_when_connected;
+        config->hide_ap_when_connected = cJSON_IsTrue(hide_ap_when_connected);
+        
+        // If the setting changed and we're connected, apply the change immediately
+        if (old_value != config->hide_ap_when_connected && 
+            wifi_manager_get_state() == WIFI_MANAGER_STATE_CONNECTED) {
+            ESP_LOGI(TAG, "AP visibility setting changed, updating WiFi mode");
+            if (config->hide_ap_when_connected) {
+                ESP_LOGI(TAG, "Hiding AP interface");
+                esp_wifi_set_mode(WIFI_MODE_STA);
+            } else {
+                ESP_LOGI(TAG, "Showing AP interface");
+                esp_wifi_set_mode(WIFI_MODE_APSTA);
+            }
+        }
+    }
+    
+    // If we're in AP mode, we need to restart the AP with the new password
+    if (ap_password && cJSON_IsString(ap_password) && 
+        wifi_manager_get_state() == WIFI_MANAGER_STATE_AP_MODE) {
+        ESP_LOGI(TAG, "AP password changed, restarting wifi manager");
+        wifi_manager_stop();
+        wifi_manager_start();
+    }
+    
+    // Buffer settings
+    cJSON *initial_buffer_size = cJSON_GetObjectItem(root, "initial_buffer_size");
+    if (initial_buffer_size && cJSON_IsNumber(initial_buffer_size)) {
+        config->initial_buffer_size = (uint8_t)initial_buffer_size->valueint;
+    }
+    
+    cJSON *buffer_grow_step_size = cJSON_GetObjectItem(root, "buffer_grow_step_size");
+    if (buffer_grow_step_size && cJSON_IsNumber(buffer_grow_step_size)) {
+        config->buffer_grow_step_size = (uint8_t)buffer_grow_step_size->valueint;
+    }
+    
+    cJSON *max_buffer_size = cJSON_GetObjectItem(root, "max_buffer_size");
+    if (max_buffer_size && cJSON_IsNumber(max_buffer_size)) {
+        config->max_buffer_size = (uint8_t)max_buffer_size->valueint;
+    }
+    
+    cJSON *max_grow_size = cJSON_GetObjectItem(root, "max_grow_size");
+    if (max_grow_size && cJSON_IsNumber(max_grow_size)) {
+        config->max_grow_size = (uint8_t)max_grow_size->valueint;
+    }
+    
+    // Audio settings
+    cJSON *sample_rate = cJSON_GetObjectItem(root, "sample_rate");
+    if (sample_rate && cJSON_IsNumber(sample_rate)) {
+        config->sample_rate = (uint32_t)sample_rate->valueint;
+    }
+    
+    cJSON *bit_depth = cJSON_GetObjectItem(root, "bit_depth");
+    if (bit_depth && cJSON_IsNumber(bit_depth)) {
+        config->bit_depth = 16;
+    }
+    
+    // Track if volume was changed
+    bool volume_changed = false;
+    float old_volume = config->volume;
+    
+    cJSON *volume = cJSON_GetObjectItem(root, "volume");
+    if (volume && cJSON_IsNumber(volume)) {
+        config->volume = (float)volume->valuedouble;
+        volume_changed = (old_volume != config->volume);
+    }
+    
+    // Sleep settings
+    cJSON *silence_threshold_ms = cJSON_GetObjectItem(root, "silence_threshold_ms");
+    if (silence_threshold_ms && cJSON_IsNumber(silence_threshold_ms)) {
+        config->silence_threshold_ms = (uint32_t)silence_threshold_ms->valueint;
+    }
+    
+    cJSON *network_check_interval_ms = cJSON_GetObjectItem(root, "network_check_interval_ms");
+    if (network_check_interval_ms && cJSON_IsNumber(network_check_interval_ms)) {
+        config->network_check_interval_ms = (uint32_t)network_check_interval_ms->valueint;
+    }
+    
+    cJSON *activity_threshold_packets = cJSON_GetObjectItem(root, "activity_threshold_packets");
+    if (activity_threshold_packets && cJSON_IsNumber(activity_threshold_packets)) {
+        config->activity_threshold_packets = (uint8_t)activity_threshold_packets->valueint;
+    }
+    
+    cJSON *silence_amplitude_threshold = cJSON_GetObjectItem(root, "silence_amplitude_threshold");
+    if (silence_amplitude_threshold && cJSON_IsNumber(silence_amplitude_threshold)) {
+        config->silence_amplitude_threshold = (uint16_t)silence_amplitude_threshold->valueint;
+    }
+    
+    cJSON *network_inactivity_timeout_ms = cJSON_GetObjectItem(root, "network_inactivity_timeout_ms");
+    if (network_inactivity_timeout_ms && cJSON_IsNumber(network_inactivity_timeout_ms)) {
+        config->network_inactivity_timeout_ms = (uint32_t)network_inactivity_timeout_ms->valueint;
+    }
+    
+    // Free the JSON object
+    cJSON_Delete(root);
+    
+    // Save the configuration to NVS
+    esp_err_t err = config_manager_save_config();
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save configuration");
+        return ESP_FAIL;
+    }
+    
+    // Apply volume changes immediately if volume was changed
+    if (volume_changed) {
+        ESP_LOGI(TAG, "Volume changed, applying immediately");
+        resume_playback();
+    }
+    
+    // Send success response
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, "{\"status\":\"ok\",\"message\":\"Settings saved successfully\"}");
+    
+    return ESP_OK;
+}
+
+/**
  * GET handler for Apple Captive Network Assistant detection
  */
 static esp_err_t apple_cna_get_handler(httpd_req_t *req)
@@ -635,11 +1087,16 @@ esp_err_t web_server_start(void)
     // Configure the HTTP server
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable = true;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 15;
     
     // Increase buffer size for requests
     config.recv_wait_timeout = 30;      // Longer timeout for processing requests
     config.send_wait_timeout = 30;      // Longer timeout for sending responses
+    
+    // Bind the server to ANY address instead of just the AP interface
+    // This allows it to be accessible from both AP and STA interfaces
+    config.server_port = 80;
+    config.ctrl_port = 32768;
     
     // You might need to modify sdkconfig to increase HTTPD_MAX_REQ_HDR_LEN and HTTPD_MAX_URI_LEN
     
@@ -697,6 +1154,24 @@ esp_err_t web_server_start(void)
     
     // Register URI handlers
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &root));
+    
+    // Add handlers for CSS and JS files
+    httpd_uri_t css = {
+        .uri       = "/styles.css",
+        .method    = HTTP_GET,
+        .handler   = css_get_handler,
+        .user_ctx  = NULL
+    };
+    ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &css));
+    
+    httpd_uri_t js = {
+        .uri       = "/script.js",
+        .method    = HTTP_GET,
+        .handler   = js_get_handler,
+        .user_ctx  = NULL
+    };
+    ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &js));
+    
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &scan));
     
     // Add status endpoint
@@ -708,6 +1183,23 @@ esp_err_t web_server_start(void)
     };
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &status));
     
+    // Add settings endpoints
+    httpd_uri_t settings_get = {
+        .uri       = "/api/settings",
+        .method    = HTTP_GET,
+        .handler   = settings_get_handler,
+        .user_ctx  = NULL
+    };
+    ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &settings_get));
+    
+    httpd_uri_t settings_post = {
+        .uri       = "/api/settings",
+        .method    = HTTP_POST,
+        .handler   = settings_post_handler,
+        .user_ctx  = NULL
+    };
+    ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &settings_post));
+    
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &connect));
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &reset));
     
@@ -717,8 +1209,10 @@ esp_err_t web_server_start(void)
     // Register catch-all handler (must be registered last)
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_httpd_handle, &redirect));
     
-    // Start DNS server for captive portal
-    start_dns_server();
+    // Only start DNS server for captive portal if in AP mode
+    if (wifi_manager_get_state() == WIFI_MANAGER_STATE_AP_MODE) {
+        start_dns_server();
+    }
     
     ESP_LOGI(TAG, "Web server started successfully");
     return ESP_OK;
