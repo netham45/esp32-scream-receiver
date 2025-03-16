@@ -1,0 +1,2060 @@
+diff --git a/main/audio.c b/main/audio.c
+index 5a8a05e..bbb85c0 100644
+--- a/main/audio.c
++++ b/main/audio.c
+@@ -2,7 +2,9 @@
+ #include "buffer.h"
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
++#include "freertos/event_groups.h"
+ #include "esp_log.h"
++#include "esp_timer.h"
+ #ifdef IS_SPDIF
+ #include "spdif.h"
+ #endif
+@@ -11,78 +13,267 @@
+ uac_host_device_handle_t spkr_handle = NULL;
+ #endif
+ 
++// Audio state variables
+ bool playing = false;
+-
+ uint8_t volume = 100;
+ uint8_t silence[32] = {0};
+ bool is_silent = false;
++uint32_t silent_period_count = 0;
++
++// Power management settings
++#define SILENCE_POWER_REDUCTION_THRESHOLD 100  // Number of silent frames before reducing power
++#define AUDIO_CHECK_INTERVAL_MS 20             // How often to check for audio activity when idle
++
++// Event group for audio synchronization
++EventGroupHandle_t audio_event_group = NULL;
++#define AUDIO_DATA_READY_BIT (1 << 0)
++#define AUDIO_STOP_BIT (1 << 1)
++
++// Forward declarations for internal functions
++static void audio_task_wakeup(void);
++static void reduce_power_during_silence(bool is_active);
+ 
+-void resume_playback() {
++esp_err_t resume_playback() {
++    esp_err_t err = ESP_OK;
++    
+ #ifdef IS_USB
+-	uac_host_stream_config_t stm_config = {
++    // Check if we have a valid speaker handle
++    if (spkr_handle == NULL) {
++        ESP_LOGW(TAG, "Cannot resume playback - no valid speaker handle");
++        return ESP_ERR_INVALID_STATE;
++    }
++
++    uac_host_stream_config_t stm_config = {
+         .channels = 2,
+         .bit_resolution = 16,
+         .sample_freq = 48000,
+     };
+-    ESP_ERROR_CHECK(uac_host_device_start(spkr_handle, &stm_config));
+-	ESP_ERROR_CHECK(uac_host_device_set_volume(spkr_handle, volume));
++    
++    // Start the UAC device and handle errors gracefully
++    err = uac_host_device_start(spkr_handle, &stm_config);
++    if (err != ESP_OK) {
++        ESP_LOGE(TAG, "Failed to start UAC device: %d", err);
++        return err;
++    }
++    
++    // Set volume and handle potential errors
++    err = uac_host_device_set_volume(spkr_handle, volume);
++    if (err != ESP_OK) {
++        ESP_LOGW(TAG, "Failed to set volume: %d", err);
++        // Continue anyway - volume setting is not critical
++    }
+ #endif
+-	ESP_LOGI(TAG, "Resume Playback");
+-	playing = true;
++
++    ESP_LOGI(TAG, "Resume Playback");
++    playing = true;
++    is_silent = false;
++    silent_period_count = 0;
++    
++    // Ensure we're in active power mode when playback starts
++    reduce_power_during_silence(true);
++    
++    // Signal audio task to wake up if it's sleeping
++    audio_task_wakeup();
++    
++    return ESP_OK;
+ }
+ 
+ #ifdef IS_USB
+-void start_playback(uac_host_device_handle_t _spkr_handle) {
+-	spkr_handle = _spkr_handle;
++esp_err_t start_playback(uac_host_device_handle_t _spkr_handle) {
++    // Validate the handle
++    if (_spkr_handle == NULL) {
++        ESP_LOGE(TAG, "Invalid speaker handle");
++        return ESP_ERR_INVALID_ARG;
++    }
++    
++    spkr_handle = _spkr_handle;
++    
++    // Track the connection in the global state
++    extern bool g_usb_connected;
++    g_usb_connected = true;
++    
++    // Update activity timestamp in global state
++    extern uint32_t g_last_audio_activity;
++    g_last_audio_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    
++    // Reset silence counter
++    silent_period_count = 0;
++    is_silent = false;
++    
++    return ESP_OK;
+ }
+ #endif
+ 
+-void stop_playback() {
+-	playing = false;
+-	ESP_LOGI(TAG, "Stop Playback");
++esp_err_t stop_playback() {
++    playing = false;
++    ESP_LOGI(TAG, "Stop Playback");
++    
+ #ifdef IS_USB
+-	uac_host_device_stop(spkr_handle);
++    esp_err_t err = ESP_OK;
++    
++    if (spkr_handle != NULL) {
++        err = uac_host_device_stop(spkr_handle);
++        if (err != ESP_OK) {
++            ESP_LOGW(TAG, "Error stopping UAC device: %d", err);
++            // Continue despite error
++        }
++    }
+ #endif
++    
++    // Signal audio task to stop processing
++    if (audio_event_group != NULL) {
++        xEventGroupSetBits(audio_event_group, AUDIO_STOP_BIT);
++    }
++    
++    return ESP_OK;
+ }
+ 
+-void audio_direct_write(uint8_t *data) {
++/**
++ * @brief Adjust power consumption based on audio activity
++ * 
++ * @param is_active True if active audio is being processed
++ */
++static void reduce_power_during_silence(bool is_active) {
++    // Update global activity timestamp if there's audio activity
++    if (is_active) {
++        extern uint32_t g_last_audio_activity;
++        g_last_audio_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++        
++        // Reset silence counter
++        silent_period_count = 0;
++    }
++}
++
++/**
++ * @brief Wake up the audio processing task
++ */
++static void audio_task_wakeup(void) {
++    if (audio_event_group != NULL) {
++        xEventGroupSetBits(audio_event_group, AUDIO_DATA_READY_BIT);
++    }
++}
++
++esp_err_t audio_direct_write(uint8_t *data) {
++    // Validate input
++    if (data == NULL) {
++        return ESP_ERR_INVALID_ARG;
++    }
++    
++    // Track active audio for power management
++    reduce_power_during_silence(true);
++    
++    esp_err_t err = ESP_OK;
++    
+ #ifdef IS_USB
+-  uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
++    if (spkr_handle != NULL) {
++        err = uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
++        if (err != ESP_OK) {
++            ESP_LOGW(TAG, "Error writing to UAC device: %d", err);
++            return err;
++        }
++    } else {
++        return ESP_ERR_INVALID_STATE;
++    }
+ #endif
++
+ #ifdef IS_SPDIF
+-			spdif_write(data, PCM_CHUNK_SIZE);
++    spdif_write(data, PCM_CHUNK_SIZE);
+ #endif
++
++    return ESP_OK;
+ }
+ 
+ void pcm_handler(void*) {
+-  while (true) {
+-	  if (playing) {
+-		uint8_t *data = pop_chunk();
+-		if (data) {
++    // Create event group for synchronization if not created already
++    audio_event_group = xEventGroupCreate();
++    
++    // Main audio processing loop
++    while (true) {
++        if (playing) {
++            uint8_t *data = pop_chunk();
++            if (data) {
++                // We have audio data
+ #ifdef IS_USB
+-			uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
++                if (spkr_handle != NULL) {
++                    esp_err_t err = uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, 100 / portTICK_PERIOD_MS);
++                    if (err != ESP_OK) {
++                        ESP_LOGW(TAG, "Error writing to UAC device: %d", err);
++                        // Continue despite error
++                    }
++                }
+ #endif
+ #ifdef IS_SPDIF
+-			spdif_write(data, PCM_CHUNK_SIZE);
++                spdif_write(data, PCM_CHUNK_SIZE);
+ #endif
+-			is_silent = false;
+-		}
+-		else if (!is_silent) {
+-			ESP_LOGI(TAG, "Silent");
+-			is_silent = true;
+-		}
+-		//else
+-//		    for (int i=0;i<1152/32;i++)
+-	//		    uac_host_device_write(spkr_handle, silence, 32, portMAX_DELAY);
+-		//	vTaskDelay(7);
+-	  }
+-    vTaskDelay(1);
+-  }
++                // Update activity status
++                if (is_silent) {
++                    ESP_LOGI(TAG, "Audio resumed after silence");
++                }
++                is_silent = false;
++                silent_period_count = 0;
++                reduce_power_during_silence(true);
++            }
++            else if (!is_silent) {
++                // Just became silent
++                ESP_LOGI(TAG, "Silent");
++                is_silent = true;
++                silent_period_count = 1;
++            }
++            else {
++                // Continuing silence
++                silent_period_count++;
++                
++                // If we've been silent for a while, optimize power
++                if (silent_period_count >= SILENCE_POWER_REDUCTION_THRESHOLD) {
++                    // Enter power saving during extended silence
++                    reduce_power_during_silence(false);
++                    
++                    // Use event-based wait instead of polling during silence
++                    // This allows the CPU to idle or power down
++                    EventBits_t bits = xEventGroupWaitBits(
++                        audio_event_group,
++                        AUDIO_DATA_READY_BIT | AUDIO_STOP_BIT,
++                        pdTRUE,   // Clear the bits after waiting
++                        pdFALSE,  // Wait for any bit, not all
++                        pdMS_TO_TICKS(AUDIO_CHECK_INTERVAL_MS));
++                    
++                    if (bits & AUDIO_STOP_BIT) {
++                        // Playback was stopped, reset state
++                        is_silent = false;
++                        silent_period_count = 0;
++                    }
++                    
++                    continue; // Skip the normal delay at the bottom
++                }
++            }
++        }
++        else {
++            // Not playing, wait for events instead of polling
++            xEventGroupWaitBits(
++                audio_event_group,
++                AUDIO_DATA_READY_BIT,
++                pdTRUE,   // Clear the bits after waiting
++                pdFALSE,  // Wait for any bit
++                pdMS_TO_TICKS(AUDIO_CHECK_INTERVAL_MS));
++            
++            // Reset silence tracking when not playing
++            is_silent = false;
++            silent_period_count = 0;
++            continue; // Skip normal delay
++        }
++        
++        // Small delay to prevent tight loop during active audio
++        vTaskDelay(1);
++    }
+ }
+ 
+ void setup_audio() {
+ #ifdef IS_SPDIF
+-  spdif_init(48000);
++    spdif_init(48000);
+ #endif
+-  xTaskCreatePinnedToCore(pcm_handler, "pcm_handler", 16384, NULL, 1, NULL, 1);
+-}
+\ No newline at end of file
++    xTaskCreatePinnedToCore(pcm_handler, "pcm_handler", 16384, NULL, 1, NULL, 1);
++    
++    // Initialize silence detection
++    is_silent = true;
++    silent_period_count = 0;
++}
+diff --git a/main/audio.h b/main/audio.h
+index 4477188..382735d 100644
+--- a/main/audio.h
++++ b/main/audio.h
+@@ -1,15 +1,21 @@
+ #pragma once
+ #include "config.h"
++#include "esp_err.h"
+ #ifdef IS_USB
+ #include "usb/uac_host.h"
+ #endif
++
++// Function prototypes
+ void process_audio_actions(bool is_startup);
+ void register_button(int button,void (*action)(bool, int, void *));
+ void setup_audio();
++
++// Updated function signatures with error handling
+ #ifdef IS_USB
+-void start_playback(uac_host_device_handle_t _spkr_handle);
++esp_err_t start_playback(uac_host_device_handle_t _spkr_handle);
+ #endif
+-void stop_playback();
++
++esp_err_t stop_playback();
+ void audio_write(uint8_t* data);
+-void audio_direct_write(uint8_t *data);
+-void resume_playback();
+\ No newline at end of file
++esp_err_t audio_direct_write(uint8_t *data);
++esp_err_t resume_playback();
+diff --git a/main/buffer.c b/main/buffer.c
+index e7a43ce..4cca85c 100644
+--- a/main/buffer.c
++++ b/main/buffer.c
+@@ -2,87 +2,280 @@
+ #include "global.h"
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
++#include "freertos/event_groups.h"
+ #include <string.h>
+ #include "esp_log.h"
+ #include "esp_psram.h"
++#include "esp_timer.h"
+ 
+-// Flag if the stream is currently underrun and rebuffering
+-bool is_underrun                            = true;
+-// Number of received packets since last underflow
+-unsigned int received_packets               = 0;
+-// Number of packets in ring buffer
+-unsigned int packet_buffer_size             = 0;
+-// Position of ring buffer read head
+-unsigned int packet_buffer_pos              = 0;
+-// Number of bytes to buffer
+-unsigned int target_buffer_size             = INITIAL_BUFFER_SIZE;
+-// Buffer of packets to send
+-uint8_t *packet_buffer[MAX_BUFFER_SIZE] = { 0 };
++// Buffer state variables
++bool is_underrun = true;                           // Flag if the stream is currently underrun and rebuffering
++unsigned int received_packets = 0;                 // Number of received packets since last underflow
++unsigned int packet_buffer_size = 0;               // Number of packets in ring buffer
++unsigned int packet_buffer_pos = 0;                // Position of ring buffer read head
++unsigned int target_buffer_size = INITIAL_BUFFER_SIZE; // Number of bytes to buffer
++uint8_t *packet_buffer[MAX_BUFFER_SIZE] = { 0 };   // Buffer of packets to send
+ portMUX_TYPE buffer_mutex = portMUX_INITIALIZER_UNLOCKED;
+ 
++// Event group for buffer signaling
++EventGroupHandle_t buffer_event_group = NULL;
++#define BUFFER_DATA_READY_BIT (1 << 0)
++#define BUFFER_EMPTY_BIT (1 << 1)
++
++// Power optimization
++#define BUFFER_MONITORING_INTERVAL_MS 50 // How often to check buffer status when idle
++static uint32_t last_buffer_activity = 0; // Timestamp of last buffer activity
++static bool low_power_buffer_mode = false; // Whether we're in power-saving buffer mode
++
++/**
++ * @brief Signal that data is ready in the buffer
++ * This wakes up any tasks waiting for buffer data
++ */
++static void signal_buffer_ready(void) {
++    if (buffer_event_group != NULL) {
++        xEventGroupSetBits(buffer_event_group, BUFFER_DATA_READY_BIT);
++    }
++    
++    // Update activity tracking
++    last_buffer_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    
++    // If we were in low power mode, exit it
++    if (low_power_buffer_mode) {
++        low_power_buffer_mode = false;
++    }
++    
++    // Update global activity time for main task power management
++    extern uint32_t g_last_audio_activity;
++    g_last_audio_activity = last_buffer_activity;
++}
++
++/**
++ * @brief Signal that the buffer is empty
++ */
++static void signal_buffer_empty(void) {
++    if (buffer_event_group != NULL) {
++        xEventGroupSetBits(buffer_event_group, BUFFER_EMPTY_BIT);
++    }
++}
++
++/**
++ * @brief Set underrun state and adjust buffer size
++ * Uses adaptive buffer sizing to prevent future underruns
++ */
+ void set_underrun() {
+-  if (!is_underrun) {
+-    received_packets = 0;
+-    target_buffer_size += BUFFER_GROW_STEP_SIZE;
+-    if (target_buffer_size >= MAX_GROW_SIZE)
+-      target_buffer_size = MAX_GROW_SIZE;
+-    ESP_LOGI(TAG, "Buffer Underflow, New Size: %i", target_buffer_size);
+-  }
+-  is_underrun = true;
++    if (!is_underrun) {
++        received_packets = 0;
++        
++        // Adaptively grow buffer size to prevent future underruns
++        // but only if buffer growth is enabled (BUFFER_GROW_STEP_SIZE > 0)
++        if (BUFFER_GROW_STEP_SIZE > 0) {
++            target_buffer_size += BUFFER_GROW_STEP_SIZE;
++            if (target_buffer_size >= MAX_GROW_SIZE)
++                target_buffer_size = MAX_GROW_SIZE;
++            ESP_LOGI(TAG, "Buffer Underflow, New Size: %i", target_buffer_size);
++        } else {
++            ESP_LOGI(TAG, "Buffer Underflow");
++        }
++        
++        // Signal buffer empty to any waiting tasks
++        signal_buffer_empty();
++    }
++    is_underrun = true;
+ }
+ 
++/**
++ * @brief Push a chunk of audio data to the buffer
++ * 
++ * @param chunk Pointer to audio data
++ * @return true if successful, false if buffer is full
++ */
+ bool push_chunk(uint8_t *chunk) {
+-  int write_position = (packet_buffer_pos + packet_buffer_size) % MAX_BUFFER_SIZE;
+-//  ESP_LOGI(TAG, "memcpy(%p, %p, %i)", packet_buffer[write_position], chunk, PCM_CHUNK_SIZE); 
+-  taskENTER_CRITICAL(&buffer_mutex);
+-  if (packet_buffer_size == MAX_BUFFER_SIZE) {
+-    packet_buffer_size = target_buffer_size;
+-    taskEXIT_CRITICAL(&buffer_mutex);
+-    ESP_LOGI(TAG, "Buffer Overflow");
+-    return false;
+-  }
++    int write_position = (packet_buffer_pos + packet_buffer_size) % MAX_BUFFER_SIZE;
++    
++    taskENTER_CRITICAL(&buffer_mutex);
++    
++    // Handle buffer overflow
++    if (packet_buffer_size == MAX_BUFFER_SIZE) {
++        // Reset to target size when overflowed
++        packet_buffer_size = target_buffer_size;
++        taskEXIT_CRITICAL(&buffer_mutex);
++        ESP_LOGI(TAG, "Buffer Overflow");
++        return false;
++    }
+ 
+-  write_position = (packet_buffer_pos + packet_buffer_size) % MAX_BUFFER_SIZE;
+-  memcpy(packet_buffer[write_position], chunk, PCM_CHUNK_SIZE);
+-  packet_buffer_size++;
+-  received_packets++;
+-  if (received_packets >= target_buffer_size)
+-    is_underrun = false;
+-  taskEXIT_CRITICAL(&buffer_mutex);
+-  return true;
++    // Add chunk to buffer
++    write_position = (packet_buffer_pos + packet_buffer_size) % MAX_BUFFER_SIZE;
++    memcpy(packet_buffer[write_position], chunk, PCM_CHUNK_SIZE);
++    packet_buffer_size++;
++    received_packets++;
++    
++    // Check if we've received enough data to exit underrun state
++    bool was_underrun = is_underrun;
++    if (received_packets >= target_buffer_size)
++        is_underrun = false;
++    
++    taskEXIT_CRITICAL(&buffer_mutex);
++    
++    // If we've just filled the buffer enough to play, signal that data is ready
++    if (was_underrun && !is_underrun) {
++        ESP_LOGI(TAG, "Buffer ready for playback (%d packets)", received_packets);
++        signal_buffer_ready();
++    } else if (packet_buffer_size == 1 && was_underrun) {
++        // First packet after empty buffer, signal data ready
++        signal_buffer_ready();
++    }
++    
++    return true;
+ }
+ 
++/**
++ * @brief Pop a chunk of audio data from the buffer
++ * 
++ * @return Pointer to audio data or NULL if buffer is empty or underrun
++ */
+ uint8_t *pop_chunk() {
+-  taskENTER_CRITICAL(&buffer_mutex);
+-  if (packet_buffer_size == 0) {
++    uint8_t *return_chunk = NULL;
++    bool empty = false;
++    
++    taskENTER_CRITICAL(&buffer_mutex);
++    
++    // Check if buffer is empty
++    if (packet_buffer_size == 0) {
++        empty = true;
++        taskEXIT_CRITICAL(&buffer_mutex);
++        set_underrun();
++        return NULL;
++    }
++    
++    // Check if we're in underrun state
++    if (is_underrun) {
++        taskEXIT_CRITICAL(&buffer_mutex);
++        return NULL;
++    }
++    
++    // Get chunk from buffer
++    return_chunk = packet_buffer[packet_buffer_pos];
++    packet_buffer_size--;
++    packet_buffer_pos = (packet_buffer_pos + 1) % MAX_BUFFER_SIZE;
++    
++    // Check if this was the last chunk
++    if (packet_buffer_size == 0) {
++        empty = true;
++    }
++    
+     taskEXIT_CRITICAL(&buffer_mutex);
+-    set_underrun();
+-    return NULL;
+-  }
+-  if (is_underrun) {
+-    taskEXIT_CRITICAL(&buffer_mutex);
+-    return NULL;
+-  }
+-  uint8_t *return_chunk = packet_buffer[packet_buffer_pos];
+-  packet_buffer_size--;
+-  packet_buffer_pos = (packet_buffer_pos + 1) % MAX_BUFFER_SIZE;
+-  taskEXIT_CRITICAL(&buffer_mutex);
+-  return return_chunk;
++    
++    // Signal if buffer just became empty
++    if (empty) {
++        signal_buffer_empty();
++    }
++    
++    // Update activity timestamp
++    if (return_chunk != NULL) {
++        last_buffer_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    }
++    
++    return return_chunk;
+ }
+ 
++/**
++ * @brief Empty the buffer and reset state
++ */
+ void empty_buffer() {
+-	taskENTER_CRITICAL(&buffer_mutex);
+-	packet_buffer_size = 0;
+-	received_packets = 0;
+-	taskEXIT_CRITICAL(&buffer_mutex);
++    taskENTER_CRITICAL(&buffer_mutex);
++    packet_buffer_size = 0;
++    received_packets = 0;
++    taskEXIT_CRITICAL(&buffer_mutex);
++    
++    // Signal buffer empty to any waiting tasks
++    signal_buffer_empty();
++    
++    // Set low power mode since buffer is empty
++    low_power_buffer_mode = true;
++}
++
++/**
++ * @brief Check if buffer is empty
++ * 
++ * @return true if buffer is empty, false otherwise
++ */
++bool is_buffer_empty(void) {
++    bool empty = false;
++    
++    taskENTER_CRITICAL(&buffer_mutex);
++    empty = (packet_buffer_size == 0);
++    taskEXIT_CRITICAL(&buffer_mutex);
++    
++    return empty;
++}
++
++/**
++ * @brief Get current buffer fullness as percentage
++ * 
++ * @return Percentage of buffer fullness (0-100)
++ */
++uint8_t get_buffer_fullness(void) {
++    uint8_t fullness = 0;
++    
++    taskENTER_CRITICAL(&buffer_mutex);
++    if (MAX_BUFFER_SIZE > 0) {
++        fullness = (packet_buffer_size * 100) / MAX_BUFFER_SIZE;
++    }
++    taskEXIT_CRITICAL(&buffer_mutex);
++    
++    return fullness;
+ }
+ 
++/**
++ * @brief Wait for buffer data with timeout
++ * 
++ * @param timeout_ms Timeout in milliseconds
++ * @return true if data is available, false on timeout
++ */
++bool wait_for_buffer_data(uint32_t timeout_ms) {
++    if (buffer_event_group == NULL) {
++        return false;
++    }
++    
++    // Wait for buffer data event
++    EventBits_t bits = xEventGroupWaitBits(
++        buffer_event_group,
++        BUFFER_DATA_READY_BIT,
++        pdTRUE,   // Clear the bits after waiting
++        pdFALSE,  // Wait for any bit
++        pdMS_TO_TICKS(timeout_ms));
++    
++    return (bits & BUFFER_DATA_READY_BIT) != 0;
++}
++
++/**
++ * @brief Setup the buffer system
++ */
+ void setup_buffer() {
+-  ESP_LOGI(TAG, "Allocating buffer");
+-  uint8_t *buffer = 0;
+-  buffer = (uint8_t *)malloc(PCM_CHUNK_SIZE * MAX_BUFFER_SIZE);
+-  memset(buffer, 0, PCM_CHUNK_SIZE * MAX_BUFFER_SIZE);
+-  for (int i = 0; i < MAX_BUFFER_SIZE; i++)
+-    packet_buffer[i] = (uint8_t *)buffer + i * PCM_CHUNK_SIZE;
+-  ESP_LOGI(TAG, "Buffer allocated");
+-}
+\ No newline at end of file
++    ESP_LOGI(TAG, "Allocating buffer");
++    
++    // Create a single contiguous block of memory for all buffer chunks
++    uint8_t *buffer = (uint8_t *)malloc(PCM_CHUNK_SIZE * MAX_BUFFER_SIZE);
++    if (buffer == NULL) {
++        ESP_LOGE(TAG, "Failed to allocate buffer memory!");
++        return;
++    }
++    
++    // Clear buffer memory
++    memset(buffer, 0, PCM_CHUNK_SIZE * MAX_BUFFER_SIZE);
++    
++    // Setup buffer pointers
++    for (int i = 0; i < MAX_BUFFER_SIZE; i++) {
++        packet_buffer[i] = buffer + (i * PCM_CHUNK_SIZE);
++    }
++    
++    // Create event group for buffer events
++    buffer_event_group = xEventGroupCreate();
++    
++    // Initialize activity tracking
++    last_buffer_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    low_power_buffer_mode = true;
++    
++    ESP_LOGI(TAG, "Buffer allocated: %d bytes for %d chunks", 
++             PCM_CHUNK_SIZE * MAX_BUFFER_SIZE, MAX_BUFFER_SIZE);
++}
+diff --git a/main/buffer.h b/main/buffer.h
+index 21746ce..bb15ae1 100644
+--- a/main/buffer.h
++++ b/main/buffer.h
+@@ -1,13 +1,20 @@
+ #pragma once
+ 
++// External variables for buffer state
+ extern bool is_underrun;
+ extern uint64_t received_packets;
+ extern uint64_t packet_buffer_size;
+ extern uint64_t packet_buffer_pos;
+ extern uint64_t target_buffer_size;
+ 
+-void setup_buffer();
++// Buffer management functions
++void set_underrun(void);
+ bool push_chunk(uint8_t *chunk);
+-uint8_t *pop_chunk();
+-void setup_buffer();
+-void empty_buffer();
+\ No newline at end of file
++uint8_t *pop_chunk(void);
++void empty_buffer(void);
++void setup_buffer(void);
++
++// New power-optimized buffer functions
++bool is_buffer_empty(void);
++uint8_t get_buffer_fullness(void);
++bool wait_for_buffer_data(uint32_t timeout_ms);
+diff --git a/main/config.h b/main/config.h
+index ff0073c..6e8193b 100644
+--- a/main/config.h
++++ b/main/config.h
+@@ -7,7 +7,7 @@
+ // Number of chunks to add each underflow, configurable
+ #define BUFFER_GROW_STEP_SIZE 0
+ // Max number of chunks to be buffered before packets are dropped, configurable
+-#define  MAX_BUFFER_SIZE 16
++#define MAX_BUFFER_SIZE 16
+ // Max number of chunks to be targeted for buffer
+ #define MAX_GROW_SIZE 4
+ 
+@@ -18,7 +18,18 @@
+ //Volume 0.0f-1.0f
+ #define VOLUME 1.0f
+ 
++// Power management settings
++#define WIFI_POWER_SAVE_ENABLED 1         // Enable WiFi power saving
++#define WIFI_LISTEN_INTERVAL 3            // Listen interval for beacons (higher = more power saving)
++#define WIFI_RSSI_THRESHOLD (-70)         // RSSI threshold for roaming (lower = less roaming)
++#define CPU_FREQ_DURING_AUDIO 240         // Maximum CPU frequency during audio playback (MHz)
++#define CPU_FREQ_DURING_IDLE 80           // Reduced CPU frequency during idle (MHz)
++#define DEEP_SLEEP_CHECK_INTERVAL_MS 5000 // How often to wake and check for USB when in deep sleep
++
++// Audio input format (hard-coded, don't change)
++#define PCM_CHUNK_SIZE (1152 * 2 * 2)     // 1152 stereo samples, 16-bit
++
+ //#define IS_SPDIF
+ #define IS_USB
+ 
+-#define TAG "scream_receiver"
+\ No newline at end of file
++#define TAG "scream_receiver"
+diff --git a/main/global.h b/main/global.h
+index 1b23abf..17dd2e6 100644
+--- a/main/global.h
++++ b/main/global.h
+@@ -2,5 +2,4 @@
+ #include "stdint.h"
+ #include "config.h"
+ #include "stdbool.h"
+-// PCM Bytes per chunk, non-configurable (Part of Scream)
+-#define PCM_CHUNK_SIZE 1152
++// PCM chunk size is now defined in config.h - we'll use that definition
+diff --git a/main/network.c b/main/network.c
+index 5611281..4d6f1a1 100644
+--- a/main/network.c
++++ b/main/network.c
+@@ -10,9 +10,13 @@
+ #include "esp_event.h"
+ #include "esp_log.h"
+ #include "nvs_flash.h"
++#include "esp_pm.h"
+ 
+ #include "lwip/err.h"
+ #include "lwip/sys.h"
++#include "lwip/sockets.h"
++#include "lwip/netdb.h"
++#include "lwip/dns.h"
+ 
+ #include <string.h>
+ #include <unistd.h>
+@@ -24,114 +28,236 @@
+ #include "secrets.h"
+ #include "audio.h"
+ 
+-const uint16_t HEADER_SIZE = 0;                         // Scream Header byte size, non-configurable (Part of Scream)
++const uint16_t HEADER_SIZE = 5;                         // Scream Header byte size, non-configurable (Part of Scream)
+ const uint16_t PACKET_SIZE = PCM_CHUNK_SIZE + HEADER_SIZE;
+-bool use_tcp = true;
++bool use_tcp = false;
+ bool connected = false;
+ 
++// Power optimization settings
++#define SOCKET_RECV_TIMEOUT_MS 100   // Use timeout instead of blocking
++#define NETWORK_TASK_STACK_SIZE 8192
++#define MAX_IDLE_TIME_MS 5000        // Max time with no data before reducing power
++
+ char server[16] = {0};
++EventGroupHandle_t network_event_group = NULL;
++
++// Event bits for network events
++#define NETWORK_DATA_RECEIVED_BIT (1 << 0)
++#define NETWORK_DISCONNECTED_BIT  (1 << 1)
+ 
++// Track last activity for power management
++static uint32_t last_data_received_time = 0;
++static bool power_save_enabled = false;
++
++// Forward declarations
+ void udp_handler(void *);
+-void tcp_handler(void *);  
++void tcp_handler(void *);
++void update_power_management(bool has_activity);
++
++/**
++ * @brief Check for network activity and adjust power settings accordingly
++ */
++void update_power_management(bool has_activity) {
++    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    
++    if (has_activity) {
++        // Activity detected, update timestamp
++        last_data_received_time = current_time;
++        
++        // If we were in power save mode, exit it
++        if (power_save_enabled) {
++            ESP_LOGD(TAG, "Network activity detected, disabling power save");
++            esp_wifi_set_ps(WIFI_PS_MIN_MODEM); // Less aggressive power save
++            power_save_enabled = false;
++            
++            // Record activity for main task to know we're active
++            extern uint32_t g_last_audio_activity;
++            g_last_audio_activity = current_time;
++        }
++    } else {
++        // Check if it's been too long since last activity
++        if (!power_save_enabled && 
++            current_time - last_data_received_time > MAX_IDLE_TIME_MS) {
++            // No activity for a while, enable power save
++            ESP_LOGD(TAG, "Network idle for %u ms, enabling max power save",
++                   (unsigned)(current_time - last_data_received_time));
++            esp_wifi_set_ps(WIFI_PS_MAX_MODEM); // Max power save
++            power_save_enabled = true;
++        }
++    }
++}
+ 
+ void tcp_handler(void *) {
+-  int connect_failure = 0;
+-  struct sockaddr_in dest_addr;
+-  inet_pton(AF_INET, server, &dest_addr.sin_addr);
+-  dest_addr.sin_family = AF_INET;
+-  dest_addr.sin_port = htons(PORT);
+-  int sock =  socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+-  const int ip_precedence_vi = 6;
+-  const int ip_precedence_offset = 5;
+-  int priority = (ip_precedence_vi << ip_precedence_offset);
+-  setsockopt(sock, IPPROTO_IP, IP_TOS, &priority, sizeof(priority));
+-  int val = 1;
+-  setsockopt(sock, 6/*SOL_TCP*/, TCP_NODELAY, &val, sizeof(val));
+-  empty_buffer();
+-  ESP_LOGI(TAG, "Connecting to ScreamRouter");
+-  while (!connected) {
+-    ESP_LOGI(TAG, "Failed to connect");
+-	int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+-	if (err != 0) {
+-		ESP_LOGE(TAG, "Socket unable to connect: errno %d", errno);
+-	} else {
+-		connected = true;
+-		break;
+-	}
+-    vTaskDelay(250);
+-    if (connect_failure++ >= 50)
+-      ESP_LOGI(TAG, "wifi isn't connecting");
+-  }
+-  ESP_LOGI(TAG, "Connected to ScreamRouter");
+-  uint8_t data[PACKET_SIZE * 2];
+-  uint16_t datahead = 0;
+-  resume_playback();
+-  while (connected) {
+-	int result = recv(sock, data + datahead, PACKET_SIZE, 0);
+-	if (!result)
+-		connected = false;
+-	datahead += result;
+-	if (datahead >= PACKET_SIZE) {
+-		//push_chunk(data + HEADER_SIZE);
+-		audio_direct_write(data + HEADER_SIZE);
+-		memcpy(data, data + PACKET_SIZE, PACKET_SIZE);
+-		datahead -= PACKET_SIZE;
+-	}
+-    vTaskDelay(1);
+-  }
+-  close(sock);
+-  stop_playback();
+-  xTaskCreatePinnedToCore(udp_handler, "udp_handler", 8192, NULL, 1, NULL, 1);
+-  vTaskDelete(NULL);
++    int connect_failure = 0;
++    struct sockaddr_in dest_addr;
++    inet_pton(AF_INET, server, &dest_addr.sin_addr);
++    dest_addr.sin_family = AF_INET;
++    dest_addr.sin_port = htons(PORT);
++    int sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
++    
++    // Configure socket for power efficiency
++    const int ip_precedence_vi = 6;
++    const int ip_precedence_offset = 5;
++    int priority = (ip_precedence_vi << ip_precedence_offset);
++    setsockopt(sock, IPPROTO_IP, IP_TOS, &priority, sizeof(priority));
++    
++    // Set TCP_NODELAY to reduce latency
++    int val = 1;
++    setsockopt(sock, 6/*SOL_TCP*/, TCP_NODELAY, &val, sizeof(val));
++    
++    // Set receive timeout to avoid blocking forever
++    struct timeval timeout;
++    timeout.tv_sec = 0;
++    timeout.tv_usec = SOCKET_RECV_TIMEOUT_MS * 1000;
++    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
++    
++    empty_buffer();
++    ESP_LOGI(TAG, "Connecting to ScreamRouter");
++    
++    while (!connected) {
++        int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
++        if (err != 0) {
++            ESP_LOGE(TAG, "Socket unable to connect: errno %d", errno);
++        } else {
++            connected = true;
++            break;
++        }
++        
++        vTaskDelay(pdMS_TO_TICKS(250));
++        if (connect_failure++ >= 50) {
++            ESP_LOGI(TAG, "WiFi isn't connecting");
++        }
++    }
++    
++    ESP_LOGI(TAG, "Connected to ScreamRouter");
++    uint8_t data[PACKET_SIZE * 2];
++    uint16_t datahead = 0;
++    resume_playback();
++    
++    // Initialize activity tracking
++    last_data_received_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    
++    while (connected) {
++        // Receive data with timeout
++        int result = recv(sock, data + datahead, PACKET_SIZE, 0);
++        
++        if (result > 0) {
++            // Data received, update activity status
++            update_power_management(true);
++            
++            datahead += result;
++            if (datahead >= PACKET_SIZE) {
++                //push_chunk(data + HEADER_SIZE);
++                audio_direct_write(data + HEADER_SIZE);
++                memcpy(data, data + PACKET_SIZE, PACKET_SIZE);
++                datahead -= PACKET_SIZE;
++            }
++        } else if (result == 0) {
++            // Connection closed
++            connected = false;
++        } else {
++            // Check if this is a timeout or an actual error
++            if (errno == EAGAIN || errno == EWOULDBLOCK) {
++                // Timeout - check if we need to adjust power management
++                update_power_management(false);
++            } else {
++                // Real error
++                ESP_LOGE(TAG, "Socket error: %d", errno);
++                connected = false;
++            }
++        }
++        
++        // Use a very small delay instead of continuous polling
++        vTaskDelay(1);
++    }
++    
++    close(sock);
++    stop_playback();
++    xTaskCreatePinnedToCore(udp_handler, "udp_handler", NETWORK_TASK_STACK_SIZE, NULL, 1, NULL, 1);
++    vTaskDelete(NULL);
+ }
+ 
+ void udp_handler(void *) {
+-	uint8_t data[PACKET_SIZE * 2];
+-	uint16_t datahead = 0;
+-	empty_buffer();
++    uint8_t data[PACKET_SIZE * 2];
++    uint16_t datahead = 0;
++    empty_buffer();
++    
+     while (1) {
+-		struct sockaddr_in dest_addr_ip4;
+-		dest_addr_ip4.sin_addr.s_addr = htonl(INADDR_ANY);
+-		dest_addr_ip4.sin_family = AF_INET;
+-		dest_addr_ip4.sin_port = htons(PORT);
++        struct sockaddr_in dest_addr_ip4;
++        dest_addr_ip4.sin_addr.s_addr = htonl(INADDR_ANY);
++        dest_addr_ip4.sin_family = AF_INET;
++        dest_addr_ip4.sin_port = htons(PORT);
+ 
+         int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+-	    const int ip_precedence_vi = 6;
+-		const int ip_precedence_offset = 5;
+-		int priority = (ip_precedence_vi << ip_precedence_offset);
+-	    setsockopt(sock, IPPROTO_IP, IP_TOS, &priority, sizeof(priority));
++        const int ip_precedence_vi = 6;
++        const int ip_precedence_offset = 5;
++        int priority = (ip_precedence_vi << ip_precedence_offset);
++        setsockopt(sock, IPPROTO_IP, IP_TOS, &priority, sizeof(priority));
++        
++        // Set receive timeout to avoid blocking forever
++        struct timeval timeout;
++        timeout.tv_sec = 0;
++        timeout.tv_usec = SOCKET_RECV_TIMEOUT_MS * 1000;
++        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
++        
+         if (sock < 0) {
+             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
+             break;
+         }
++        
+         ESP_LOGI(TAG, "Socket created");
+ 
+         int err = bind(sock, (struct sockaddr *)&dest_addr_ip4, sizeof(dest_addr_ip4));
+         if (err < 0) {
+             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+         }
++        
+         ESP_LOGI(TAG, "Socket bound, port %d", PORT);
+-		resume_playback();
++        resume_playback();
++        
++        // Initialize activity tracking
++        last_data_received_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
++        
+         while (1) {
+             int result = recv(sock, data + datahead, PACKET_SIZE, 0);
+-			if (result && use_tcp) {
+-				struct sockaddr_in addr;
+-				socklen_t addrlen = sizeof(struct sockaddr_in);
+-				recvfrom(sock, data + datahead, PACKET_SIZE, 0, (struct sockaddr *)&addr, &addrlen);
+-				strcpy(server, inet_ntoa(addr.sin_addr));
+-				xTaskCreatePinnedToCore(tcp_handler, "tcp_handler", 8192, NULL, 1, NULL, 1);
+-				close(sock);
+-				stop_playback();
+-				vTaskDelete(NULL);
+-				return;
+-			}
+-		 	datahead += result;
+-			if (datahead >= PACKET_SIZE) {
+-				//push_chunk(data + HEADER_SIZE);
+-				audio_direct_write(data + HEADER_SIZE);
+-				memcpy(data,data + PACKET_SIZE, PACKET_SIZE);
+-				datahead -= PACKET_SIZE;
+-			}
++            
++            if (result > 0) {
++                // Data received, update activity status
++                update_power_management(true);
++                
++                if (use_tcp) {
++                    struct sockaddr_in addr;
++                    socklen_t addrlen = sizeof(struct sockaddr_in);
++                    recvfrom(sock, data + datahead, PACKET_SIZE, 0, (struct sockaddr *)&addr, &addrlen);
++                    strcpy(server, inet_ntoa(addr.sin_addr));
++                    xTaskCreatePinnedToCore(tcp_handler, "tcp_handler", NETWORK_TASK_STACK_SIZE, NULL, 1, NULL, 1);
++                    close(sock);
++                    stop_playback();
++                    vTaskDelete(NULL);
++                    return;
++                }
++                
++                datahead += result;
++                if (datahead >= PACKET_SIZE) {
++                    //push_chunk(data + HEADER_SIZE);
++                    audio_direct_write(data + HEADER_SIZE);
++                    memcpy(data, data + PACKET_SIZE, PACKET_SIZE);
++                    datahead -= PACKET_SIZE;
++                }
++            } else {
++                // Check if this is a timeout or an actual error
++                if (errno == EAGAIN || errno == EWOULDBLOCK) {
++                    // Timeout - check if we need to adjust power management
++                    update_power_management(false);
++                } else {
++                    // Real error
++                    ESP_LOGE(TAG, "Socket error: %d", errno);
++                    break;
++                }
++            }
++            
++            // Small delay instead of continuous polling
++            vTaskDelay(1);
+         }
+ 
+         if (sock != -1) {
+@@ -140,15 +266,31 @@ void udp_handler(void *) {
+             close(sock);
+         }
+     }
+-	stop_playback();
++    
++    stop_playback();
+     vTaskDelete(NULL);
+ }
+ 
+ void setup_network() {
+-  xTaskCreatePinnedToCore(udp_handler, "udp_handler", 8192, NULL, 1, NULL, 1);
+-}	
++    // Create event group for network events
++    network_event_group = xEventGroupCreate();
++    
++    // Initialize power save mode
++    power_save_enabled = false;
++    
++    // Start in normal power mode
++    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
++    
++    // Start UDP handler
++    xTaskCreatePinnedToCore(udp_handler, "udp_handler", NETWORK_TASK_STACK_SIZE, NULL, 1, NULL, 1);
++}
+ 
+ void restart_network() {
+-  if (use_tcp)
+-    connected = false;
++    if (use_tcp)
++        connected = false;
++    
++    // Reset power management state
++    power_save_enabled = false;
++    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
++    last_data_received_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+ }
+diff --git a/main/usb_audio_player_main.c b/main/usb_audio_player_main.c
+index 8c373f1..064741f 100644
+--- a/main/usb_audio_player_main.c
++++ b/main/usb_audio_player_main.c
+@@ -18,6 +18,9 @@
+ #include "nvs_flash.h"
+ #include "driver/gpio.h"
+ #include "global.h"
++#include "esp_sleep.h"
++#include "esp_pm.h"
++#include "nvs.h"
+ #ifdef IS_USB
+ #include "usb/usb_host.h"
+ #include "usb/uac_host.h"
+@@ -31,7 +34,18 @@
+ #define DEFAULT_VOLUME          45
+ #define RTC_CNTL_OPTION1_REG 0x6000812C
+ #define RTC_CNTL_FORCE_DOWNLOAD_BOOT 1
++
++// Power management settings
++#define USB_CHECK_INTERVAL_US   (5 * 1000 * 1000)  // 5 seconds
++#define INACTIVITY_TIMEOUT_MS   (30 * 1000)        // 30 seconds
++#define AUDIO_IDLE_LIGHT_SLEEP_ENABLE 1
++#define PM_LIGHT_SLEEP_ENABLE 1
+ bool g_neighbor_report_active = false;
++bool g_system_active = true;
++bool g_usb_connected = false;
++uint32_t g_last_audio_activity = 0;
++RTC_DATA_ATTR uint8_t g_sleep_count = 0;
++RTC_DATA_ATTR uint32_t g_wake_interval = USB_CHECK_INTERVAL_US;
+ typedef enum {
+     APP_EVENT = 0,
+     UAC_DRIVER_EVENT,
+@@ -107,17 +121,150 @@ static void uf2_update_complete_cb()
+     xTaskNotifyGive(main_task_hdl);
+ }
+ 
++// Function to check if USB device is connected
++bool quick_usb_device_check(void) {
++    // Check for any connected USB devices
++    uint8_t dev_addr_list[4]; // Support up to 4 devices
++    int addr_count = 0;
++    esp_err_t err;
++    
++    // Get list of connected device addresses
++    err = usb_host_device_addr_list_fill(4, dev_addr_list, &addr_count);
++    
++    if (err != ESP_OK) {
++        ESP_LOGE(TAG, "Failed to get USB device addresses: %d", err);
++        return false;
++    }
++    
++    // Check if we have any devices connected
++    if (addr_count <= 0) {
++        ESP_LOGI(TAG, "No USB devices detected");
++        return false;
++    }
++    
++    // At least one device is connected
++    ESP_LOGI(TAG, "Found %d USB device(s)", addr_count);
++    return true;
++}
++
++// Function to enter deep sleep
++void enter_deep_sleep(void) {
++    ESP_LOGI(TAG, "Entering deep sleep mode");
++
++    // Save any state to RTC memory if needed
++    g_sleep_count++;
++
++    // Adjust wake interval based on sleep history (adaptive wake interval)
++    if (g_sleep_count > 10) {
++        // If we've been sleeping for a while, increase interval to save power
++        g_wake_interval = USB_CHECK_INTERVAL_US * 2; // 10 seconds
++    }
++    if (g_sleep_count > 20) {
++        g_wake_interval = USB_CHECK_INTERVAL_US * 6; // 30 seconds
++    }
++
++    // Clean up before sleep
++    if (s_spk_dev_handle != NULL) {
++        stop_playback();
++        s_spk_dev_handle = NULL;
++    }
++
++    // Disconnect WiFi
++    esp_wifi_disconnect();
++    esp_wifi_stop();
++
++    // Configure deep sleep wake-up source (timer)
++    esp_sleep_enable_timer_wakeup(g_wake_interval);
++    
++    // Enter deep sleep
++    esp_deep_sleep_start();
++    // Note: execution will continue from app_main() after wake-up
++}
++
++// Function to prepare for light sleep
++void prepare_for_light_sleep(void) {
++    if (!PM_LIGHT_SLEEP_ENABLE) {
++        return;
++    }
++    
++    ESP_LOGI(TAG, "Preparing for light sleep");
++    
++    // Set WiFi to power save mode to reduce consumption during light sleep
++    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
++    
++    // Enable light sleep - if supported
++    esp_err_t pm_result = ESP_OK;
++    
++    #if defined(CONFIG_IDF_TARGET_ESP32)
++    esp_pm_config_esp32_t pm_config = {
++        .max_freq_mhz = 80,        // Reduced CPU frequency
++        .min_freq_mhz = 40,
++        .light_sleep_enable = true
++    };
++    pm_result = esp_pm_configure(&pm_config);
++    #elif defined(CONFIG_IDF_TARGET_ESP32S2)
++    esp_pm_config_esp32s2_t pm_config = {
++        .max_freq_mhz = 80,        // Reduced CPU frequency
++        .min_freq_mhz = 40,
++        .light_sleep_enable = true
++    };
++    pm_result = esp_pm_configure(&pm_config);
++    #elif defined(CONFIG_IDF_TARGET_ESP32S3)
++    esp_pm_config_esp32s3_t pm_config = {
++        .max_freq_mhz = 80,        // Reduced CPU frequency
++        .min_freq_mhz = 40,
++        .light_sleep_enable = true
++    };
++    pm_result = esp_pm_configure(&pm_config);
++    #else
++    pm_result = ESP_ERR_NOT_SUPPORTED;
++    #endif
++    
++    // Check result and handle errors gracefully
++    if (pm_result == ESP_OK) {
++        ESP_LOGI(TAG, "Light sleep enabled successfully");
++    } else if (pm_result == ESP_ERR_NOT_SUPPORTED) {
++        ESP_LOGW(TAG, "Light sleep not supported on this device or configuration");
++    } else {
++        ESP_LOGE(TAG, "Light sleep configuration failed: %d", pm_result);
++    }
++}
++
+ static void uac_device_callback(uac_host_device_handle_t uac_device_handle, const uac_host_device_event_t event, void *arg)
+ {
+     if (event == UAC_HOST_DRIVER_EVENT_DISCONNECTED) {
+         // stop audio player first
+-        s_spk_dev_handle = NULL;
+-        //audio_player_stop();
+-		stop_playback();
+         ESP_LOGI(TAG, "UAC Device disconnected");
+-        ESP_ERROR_CHECK(uac_host_device_close(uac_device_handle));
++        
++        if (s_spk_dev_handle != NULL) {
++            stop_playback();
++            s_spk_dev_handle = NULL;
++        }
++        
++        // Try to close the device handle
++        esp_err_t err = uac_host_device_close(uac_device_handle);
++        if (err != ESP_OK) {
++            ESP_LOGW(TAG, "Error closing UAC device: %d", err);
++        }
++        
++        // Set usb connected flag to false
++        g_usb_connected = false;
++        
++        // Schedule deep sleep (with delay to allow cleanup)
++        // This will be processed in the main loop
++        TaskHandle_t main_task_hdl = xTaskGetHandle("main");
++        if (main_task_hdl != NULL) {
++            xTaskNotifyGive(main_task_hdl);
++        }
++        
+         return;
+     }
++    
++    // Device is connected - update status
++    g_usb_connected = true;
++    g_last_audio_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    g_sleep_count = 0; // Reset sleep counter - we're active
++    
+     // Send uac device event to the event queue
+     s_event_queue_t evt_queue = {
+         .event_group = UAC_DEVICE_EVENT,
+@@ -154,17 +301,41 @@ static void usb_lib_task(void *arg)
+         .intr_flags = ESP_INTR_FLAG_LEVEL1,
+     };
+ 
+-    ESP_ERROR_CHECK(usb_host_install(&host_config));
++    esp_err_t err = usb_host_install(&host_config);
++    if (err != ESP_OK) {
++        ESP_LOGE(TAG, "Failed to install USB host: %d", err);
++        // No USB host support, notify main task to go to sleep
++        g_usb_connected = false;
++        TaskHandle_t main_task_hdl = xTaskGetHandle("main");
++        if (main_task_hdl != NULL) {
++            xTaskNotifyGive(main_task_hdl);
++        }
++        vTaskDelete(NULL);
++        return;
++    }
++    
+     ESP_LOGI(TAG, "USB Host installed");
+     xTaskNotifyGive(arg);
+ 
+     while (usb_host_running) {
+         uint32_t event_flags;
+-        usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
++        err = usb_host_lib_handle_events(portMAX_DELAY, &event_flags);
++        
++        if (err != ESP_OK) {
++            ESP_LOGE(TAG, "USB host library error: %d", err);
++            // Handle error - might indicate device disconnection
++            g_usb_connected = false;
++            TaskHandle_t main_task_hdl = xTaskGetHandle("main");
++            if (main_task_hdl != NULL) {
++                xTaskNotifyGive(main_task_hdl);
++            }
++            break;
++        }
++        
+         // In this example, there is only one client registered
+         // So, once we deregister the client, this call must succeed with ESP_OK
+         if (event_flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS) {
+-            ESP_ERROR_CHECK(usb_host_device_free_all());
++            usb_host_device_free_all();
+             break;
+         }
+     }
+@@ -172,7 +343,7 @@ static void usb_lib_task(void *arg)
+     ESP_LOGI(TAG, "USB Host shutdown");
+     // Clean up USB Host
+     vTaskDelay(10); // Short delay to allow clients clean-up
+-    ESP_ERROR_CHECK(usb_host_uninstall());
++    usb_host_uninstall();
+     vTaskDelete(NULL);
+ }
+ 
+@@ -188,7 +359,20 @@ static void uac_lib_task(void *arg)
+         .callback_arg = NULL
+     };
+ 
+-    ESP_ERROR_CHECK(uac_host_install(&uac_config));
++    // Change ESP_ERROR_CHECK to handle errors gracefully
++    esp_err_t err = uac_host_install(&uac_config);
++    if (err != ESP_OK) {
++        ESP_LOGE(TAG, "Failed to install UAC host: %d", err);
++        // Signal that we should check USB and possibly sleep
++        g_usb_connected = false;
++        TaskHandle_t main_task_hdl = xTaskGetHandle("main");
++        if (main_task_hdl != NULL) {
++            xTaskNotifyGive(main_task_hdl);
++        }
++        vTaskDelete(NULL);
++        return;
++    }
++    
+     ESP_LOGI(TAG, "UAC Class Driver installed");
+     s_event_queue_t evt_queue = {0};
+     while (usb_host_running) {
+@@ -209,14 +393,76 @@ static void uac_lib_task(void *arg)
+                         .callback = uac_device_callback,
+                         .callback_arg = NULL,
+                     };
+-                    ESP_ERROR_CHECK(uac_host_device_open(&dev_config, &uac_device_handle));
+-                    ESP_ERROR_CHECK(uac_host_get_device_info(uac_device_handle, &dev_info));
++                    
++                    // Open device, with improved error handling
++                    err = uac_host_device_open(&dev_config, &uac_device_handle);
++                    if (err != ESP_OK) {
++                        ESP_LOGE(TAG, "Failed to open UAC device: %d", err);
++                        // If device can't be opened, consider it disconnected
++                        g_usb_connected = false;
++                        TaskHandle_t main_task_hdl = xTaskGetHandle("main");
++                        if (main_task_hdl != NULL) {
++                            xTaskNotifyGive(main_task_hdl);
++                        }
++                        break;
++                    }
++                    
++                    // Get device info, with better error handling
++                    err = uac_host_get_device_info(uac_device_handle, &dev_info);
++                    if (err != ESP_OK) {
++                        ESP_LOGE(TAG, "Failed to get UAC device info: %d", err);
++                        // If we can't get device info, it's probably not usable
++                        uac_host_device_close(uac_device_handle);
++                        g_usb_connected = false;
++                        TaskHandle_t main_task_hdl = xTaskGetHandle("main");
++                        if (main_task_hdl != NULL) {
++                            xTaskNotifyGive(main_task_hdl);
++                        }
++                        break;
++                    }
++                    
+                     ESP_LOGI(TAG, "UAC Device connected: SPK");
++                    
++                    // Log device parameters for debugging
+                     uac_host_printf_device_param(uac_device_handle);
+-                    //ESP_ERROR_CHECK(uac_host_device_start(uac_device_handle, &stm_config));
+                     s_spk_dev_handle = uac_device_handle;
+-                    start_playback(s_spk_dev_handle);
+-					//audio_player_play(s_fp);
++                    
++                    // Start playback only if we have a valid device handle
++                    if (s_spk_dev_handle != NULL) {
++                        // Try to start playback but handle errors gracefully
++                        err = start_playback(s_spk_dev_handle);
++                        if (err != ESP_OK) {
++                            ESP_LOGE(TAG, "Failed to start playback: %d", err);
++                            // Mark USB as disconnected if we can't start playback
++                            if (err == ESP_ERR_INVALID_ARG) {
++                                ESP_LOGE(TAG, "Invalid UAC device arguments, device will be treated as disconnected");
++                                g_usb_connected = false;
++                                // Close the device since we can't use it
++                                uac_host_device_close(uac_device_handle);
++                                s_spk_dev_handle = NULL;
++                                
++                                // Notify main task to check connection and possibly sleep
++                                TaskHandle_t main_task_hdl = xTaskGetHandle("main");
++                                if (main_task_hdl != NULL) {
++                                    xTaskNotifyGive(main_task_hdl);
++                                }
++                            } else {
++                                // For other errors, we'll still mark USB as connected
++                                // but log the issue
++                                ESP_LOGW(TAG, "Playback start failed but device remains connected");
++                                g_usb_connected = true;
++                                g_last_audio_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++                            }
++                        } else {
++                            // Playback started successfully
++                            g_usb_connected = true;
++                            g_last_audio_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++                            ESP_LOGI(TAG, "Playback started successfully");
++                        }
++                    } else {
++                        ESP_LOGE(TAG, "No valid speaker device handle");
++                        g_usb_connected = false;
++                    }
+                    
+                     break;
+                 }
+@@ -233,12 +479,17 @@ static void uac_lib_task(void *arg)
+                 switch (event) {
+                 case UAC_HOST_DRIVER_EVENT_DISCONNECTED:
+                     ESP_LOGI(TAG, "UAC Device disconnected");
++                    g_usb_connected = false;
+                     break;
+                 case UAC_HOST_DEVICE_EVENT_RX_DONE:
+                     break;
+                 case UAC_HOST_DEVICE_EVENT_TX_DONE:
++                    // Update activity timestamp for power management
++                    g_last_audio_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
+                     break;
+                 case UAC_HOST_DEVICE_EVENT_TRANSFER_ERROR:
++                    ESP_LOGW(TAG, "USB transfer error detected");
++                    // Don't immediately disconnect - might be temporary
+                     break;
+                 default:
+                     break;
+@@ -250,7 +501,13 @@ static void uac_lib_task(void *arg)
+     }
+ 
+     ESP_LOGI(TAG, "UAC Driver uninstall");
+-    ESP_ERROR_CHECK(uac_host_uninstall());
++    
++    // Clean up UAC host with error handling
++    err = uac_host_uninstall();
++    if (err != ESP_OK) {
++        ESP_LOGW(TAG, "Error uninstalling UAC host: %d", err);
++    }
++    
+ 	vTaskDelete(NULL);
+ }
+ 
+@@ -453,7 +710,6 @@ static void esp_neighbor_report_recv_handler(void* arg, esp_event_base_t event_b
+ cleanup:
+ 	if (neighbor_list)
+ 		free(neighbor_list);
+-
+ }
+ 
+ static void esp_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
+@@ -461,19 +717,22 @@ static void esp_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
+ {
+ 	wifi_event_bss_rssi_low_t *event = event_data;
+ 
+-	//ESP_LOGI(TAG, "%s:bss rssi is=%d", __func__, event->rssi);
+-	/* Lets check channel conditions */
+-	//rrm_ctx++;
+-	if (esp_rrm_send_neighbor_report_request() < 0) {
+-		/* failed to send neighbor report request */
+-		ESP_LOGI(TAG, "failed to send neighbor report request");
+-		if (esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, NULL, 0) < 0) {
+-			ESP_LOGI(TAG, "failed to send btm query");
+-		}
+-	} else {
+-		g_neighbor_report_active = true;
+-	}
+-
++	// More conservative approach to roaming - only roam if really needed
++    // First log the RSSI level - useful for debugging
++	ESP_LOGD(TAG, "RSSI low event: %" PRId32 " dBm", event->rssi);
++    
++	// We only want to roam if absolutely necessary to save power
++    if (event->rssi < -75) {  // Only react to very low RSSI
++        if (esp_rrm_send_neighbor_report_request() < 0) {
++            /* failed to send neighbor report request */
++            ESP_LOGI(TAG, "failed to send neighbor report request");
++            if (esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, NULL, 0) < 0) {
++                ESP_LOGI(TAG, "failed to send btm query");
++            }
++        } else {
++            g_neighbor_report_active = true;
++        }
++    }
+ }
+ 
+ static void event_handler(void* arg, esp_event_base_t event_base,
+@@ -502,12 +761,20 @@ static void event_handler(void* arg, esp_event_base_t event_base,
+         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+ 		restart_network();
+ 	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+-		ESP_LOGI(TAG, "setting rssi threshold as -58");
+-		esp_wifi_set_rssi_threshold(-58);
++		// Changed RSSI threshold from -58 to -70 to reduce unnecessary roaming
++		ESP_LOGI(TAG, "Setting RSSI threshold to -70");
++		esp_wifi_set_rssi_threshold(-70);
++        
++        // Enable WiFi power save mode
++        ESP_LOGI(TAG, "Enabling WiFi power save mode");
++        esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
++        
+ 		if (esp_rrm_is_rrm_supported_connection()) {
+ 			ESP_LOGI(TAG,"RRM supported");
+-                        esp_rrm_send_neighbor_report_request();
+-                        g_neighbor_report_active = true;
++            // Only request neighbor report if we actually need it
++            // (saves battery on initial connection)
++            // esp_rrm_send_neighbor_report_request();
++            // g_neighbor_report_active = true;
+ 		} else {
+ 			ESP_LOGI(TAG,"RRM not supported");
+ 		}
+@@ -516,20 +783,81 @@ static void event_handler(void* arg, esp_event_base_t event_base,
+ 		} else {
+ 			ESP_LOGI(TAG,"BTM not supported");
+ 		}
+-
+ 	}
+ }
++
+ void wifi_init_sta(void);
+ 
++// Function to check for audio inactivity and manage power state
++void check_activity_status(void) {
++    if (!g_usb_connected) {
++        // USB is disconnected, go to deep sleep
++        enter_deep_sleep();
++        return; // This won't actually execute due to deep sleep
++    }
++
++    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    uint32_t time_since_activity = current_time - g_last_audio_activity;
++    
++    if (time_since_activity > INACTIVITY_TIMEOUT_MS && AUDIO_IDLE_LIGHT_SLEEP_ENABLE) {
++        // No audio activity for a while, go to light sleep if enabled
++        ESP_LOGI(TAG, "Audio idle for %" PRIu32 " ms, preparing for light sleep", time_since_activity);
++        prepare_for_light_sleep();
++    }
++}
++
+ void app_main(void)
+ {
+-	    //Initialize NVS
++    // Check wake-up cause
++    esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
++    
++    if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
++        // Woke up from timer - check if USB device is present
++        ESP_LOGI(TAG, "Woke up from deep sleep, checking USB connection");
++        
++        // Minimal initialization for USB check
++        // Initialize NVS
++        BaseType_t ret = nvs_flash_init();
++        if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
++            ESP_ERROR_CHECK(nvs_flash_erase());
++            ret = nvs_flash_init();
++        }
++        ESP_ERROR_CHECK(ret);
++        
++        // Quick check for USB device
++        const usb_host_config_t host_config = {
++            .skip_phy_setup = false,
++            .intr_flags = ESP_INTR_FLAG_LEVEL1,
++        };
++        
++        ESP_ERROR_CHECK(usb_host_install(&host_config));
++        vTaskDelay(pdMS_TO_TICKS(100)); // Brief delay for detection
++        
++        if (!quick_usb_device_check()) {
++            // No USB device, go back to sleep
++            ESP_LOGI(TAG, "No USB device detected, returning to deep sleep");
++            usb_host_uninstall();
++            enter_deep_sleep();
++        }
++        
++        // USB device found, continue with normal initialization
++        ESP_LOGI(TAG, "USB device detected, initializing system");
++        usb_host_uninstall(); // We'll reinstall properly below
++    }
++    
++    //Initialize NVS
+     BaseType_t ret = nvs_flash_init();
+     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+       ESP_ERROR_CHECK(nvs_flash_erase());
+       ret = nvs_flash_init();
+     }
+     ESP_ERROR_CHECK(ret);
++    
++    // We'll skip setting the task name for now, as it's causing build issues
++    // but we can still find the current task with xTaskGetHandle("main") later
++    // TaskHandle_t currentTask = xTaskGetCurrentTaskHandle();
++    // vTaskSetName(currentTask, "main");
++    
+ #ifdef IS_USB
+     s_event_queue = xQueueCreate(10, sizeof(s_event_queue_t));
+     assert(s_event_queue != NULL);
+@@ -542,16 +870,67 @@ void app_main(void)
+     assert(ret == pdTRUE);
+ #endif
+ 
++    // Setup power management for CPU frequency scaling - if supported
++    ESP_LOGI(TAG, "Configuring power management...");
++    esp_err_t pm_result = ESP_OK;
++    
++    #if defined(CONFIG_IDF_TARGET_ESP32)
++    esp_pm_config_esp32_t pm_config = {
++        .max_freq_mhz = 240,        // Maximum frequency when active
++        .min_freq_mhz = 80,         // Minimum frequency to save power when idle
++        .light_sleep_enable = false  // Start with light sleep disabled
++    };
++    pm_result = esp_pm_configure(&pm_config);
++    #elif defined(CONFIG_IDF_TARGET_ESP32S2)
++    esp_pm_config_esp32s2_t pm_config = {
++        .max_freq_mhz = 240,        // Maximum frequency when active
++        .min_freq_mhz = 80,         // Minimum frequency to save power when idle
++        .light_sleep_enable = false  // Start with light sleep disabled
++    };
++    pm_result = esp_pm_configure(&pm_config);
++    #elif defined(CONFIG_IDF_TARGET_ESP32S3)
++    esp_pm_config_esp32s3_t pm_config = {
++        .max_freq_mhz = 240,        // Maximum frequency when active
++        .min_freq_mhz = 80,         // Minimum frequency to save power when idle
++        .light_sleep_enable = false  // Start with light sleep disabled
++    };
++    pm_result = esp_pm_configure(&pm_config);
++    #else
++    pm_result = ESP_ERR_NOT_SUPPORTED;
++    #endif
++    
++    // Check result and handle errors gracefully
++    if (pm_result == ESP_OK) {
++        ESP_LOGI(TAG, "Power management configured successfully");
++    } else if (pm_result == ESP_ERR_NOT_SUPPORTED) {
++        ESP_LOGW(TAG, "Power management not supported on this device or configuration");
++    } else {
++        ESP_LOGE(TAG, "Power management configuration failed: %d", pm_result);
++    }
++
+     ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+     wifi_init_sta();
+-	setup_buffer();
+-	setup_audio();
+-	setup_network();
+-			bool status = false;
++    setup_buffer();
++    setup_audio();
++    setup_network();
++    
++    g_last_audio_activity = xTaskGetTickCount() * portTICK_PERIOD_MS;
++    
+     while (1) {
+-		if (!gpio_get_level(0)) {
+-		}
+-        vTaskDelay(100);
++        // Check for USB status and inactivity
++        check_activity_status();
++        
++        // Check if we received a notification that USB was disconnected
++        uint32_t notification_value = 0;
++        if (xTaskNotifyWait(0, ULONG_MAX, &notification_value, 0) == pdTRUE) {
++            if (!g_usb_connected) {
++                // USB disconnected notification received
++                ESP_LOGI(TAG, "USB disconnection notification received");
++                enter_deep_sleep();
++            }
++        }
++        
++        vTaskDelay(pdMS_TO_TICKS(1000)); // Check every second
+     }
+ }
+ 
+@@ -588,13 +967,16 @@ void wifi_init_sta(void)
+              */
+             .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
+             .sae_pwe_h2e = ESP_WIFI_SAE_MODE,
+-			.sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
+-			.scan_method = WIFI_ALL_CHANNEL_SCAN,
+-			.rm_enabled =1,
+-			.btm_enabled =1,
+-			.mbo_enabled =1,
+-			.pmf_cfg.capable = 1,
+-			.ft_enabled =1,
++            .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
++            // Change from all channel scan to fast scan to save power
++            .scan_method = WIFI_FAST_SCAN,
++            .rm_enabled = 1,
++            .btm_enabled = 1,
++            .mbo_enabled = 1,
++            .pmf_cfg.capable = 1,
++            .ft_enabled = 1,
++            // Add listen interval to reduce power during connection
++            .listen_interval = 3, // Listen every 3rd beacon
+         },
+     };
+     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
+@@ -624,4 +1006,4 @@ void wifi_init_sta(void)
+     } else {
+         ESP_LOGE(TAG, "UNEXPECTED EVENT");
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/sdkconfig b/sdkconfig
+index 48dd4b1..3673ea0 100644
+--- a/sdkconfig
++++ b/sdkconfig
+@@ -356,6 +356,7 @@ CONFIG_SOC_ULP_HAS_ADC=y
+ CONFIG_SOC_PHY_COMBO_MODULE=y
+ CONFIG_IDF_CMAKE=y
+ CONFIG_IDF_TOOLCHAIN="gcc"
++CONFIG_IDF_TOOLCHAIN_GCC=y
+ CONFIG_IDF_TARGET_ARCH_XTENSA=y
+ CONFIG_IDF_TARGET_ARCH="xtensa"
+ CONFIG_IDF_TARGET="esp32s3"
+@@ -512,13 +513,13 @@ CONFIG_ESPTOOLPY_FLASHFREQ_80M_DEFAULT=y
+ CONFIG_ESPTOOLPY_FLASHFREQ="80m"
+ # CONFIG_ESPTOOLPY_FLASHSIZE_1MB is not set
+ # CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set
+-# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set
+-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
++CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
++# CONFIG_ESPTOOLPY_FLASHSIZE_8MB is not set
+ # CONFIG_ESPTOOLPY_FLASHSIZE_16MB is not set
+ # CONFIG_ESPTOOLPY_FLASHSIZE_32MB is not set
+ # CONFIG_ESPTOOLPY_FLASHSIZE_64MB is not set
+ # CONFIG_ESPTOOLPY_FLASHSIZE_128MB is not set
+-CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
++CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+ # CONFIG_ESPTOOLPY_HEADER_FLASHSIZE_UPDATE is not set
+ CONFIG_ESPTOOLPY_BEFORE_RESET=y
+ # CONFIG_ESPTOOLPY_BEFORE_NORESET is not set
+@@ -532,12 +533,13 @@ CONFIG_ESPTOOLPY_MONITOR_BAUD=115200
+ #
+ # Partition Table
+ #
+-# CONFIG_PARTITION_TABLE_SINGLE_APP is not set
++CONFIG_PARTITION_TABLE_SINGLE_APP=y
+ # CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE is not set
+ # CONFIG_PARTITION_TABLE_TWO_OTA is not set
+-CONFIG_PARTITION_TABLE_CUSTOM=y
++# CONFIG_PARTITION_TABLE_TWO_OTA_LARGE is not set
++# CONFIG_PARTITION_TABLE_CUSTOM is not set
+ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+-CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
++CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp.csv"
+ CONFIG_PARTITION_TABLE_OFFSET=0x8000
+ CONFIG_PARTITION_TABLE_MD5=y
+ # end of Partition Table
+@@ -562,7 +564,9 @@ CONFIG_COMPILER_STACK_CHECK_MODE_NONE=y
+ # CONFIG_COMPILER_STACK_CHECK_MODE_NORM is not set
+ # CONFIG_COMPILER_STACK_CHECK_MODE_STRONG is not set
+ # CONFIG_COMPILER_STACK_CHECK_MODE_ALL is not set
++# CONFIG_COMPILER_NO_MERGE_CONSTANTS is not set
+ # CONFIG_COMPILER_WARN_WRITE_STRINGS is not set
++CONFIG_COMPILER_DISABLE_DEFAULT_ERRORS=y
+ # CONFIG_COMPILER_DISABLE_GCC12_WARNINGS is not set
+ # CONFIG_COMPILER_DISABLE_GCC13_WARNINGS is not set
+ # CONFIG_COMPILER_DUMP_RTL_FILES is not set
+@@ -570,6 +574,7 @@ CONFIG_COMPILER_RT_LIB_GCCLIB=y
+ CONFIG_COMPILER_RT_LIB_NAME="gcc"
+ CONFIG_COMPILER_ORPHAN_SECTIONS_WARNING=y
+ # CONFIG_COMPILER_ORPHAN_SECTIONS_PLACE is not set
++# CONFIG_COMPILER_STATIC_ANALYZER is not set
+ # end of Compiler options
+ 
+ #
+@@ -917,8 +922,8 @@ CONFIG_ESP32S3_UNIVERSAL_MAC_ADDRESSES=4
+ #
+ # Sleep Config
+ #
++# CONFIG_ESP_SLEEP_POWER_DOWN_FLASH is not set
+ CONFIG_ESP_SLEEP_FLASH_LEAKAGE_WORKAROUND=y
+-CONFIG_ESP_SLEEP_PSRAM_LEAKAGE_WORKAROUND=y
+ CONFIG_ESP_SLEEP_MSPI_NEED_ALL_IO_PU=y
+ CONFIG_ESP_SLEEP_RTC_BUS_ISO_WORKAROUND=y
+ CONFIG_ESP_SLEEP_GPIO_RESET_WORKAROUND=y
+@@ -967,7 +972,7 @@ CONFIG_ESP_SPI_BUS_LOCK_ISR_FUNCS_IN_IRAM=y
+ #
+ 
+ #
+-# LCD Touch Drivers are maintained in the IDF Component Registry
++# LCD Touch Drivers are maintained in the ESP Component Registry
+ #
+ 
+ #
+@@ -980,6 +985,12 @@ CONFIG_LCD_PANEL_IO_FORMAT_BUF_SIZE=32
+ # end of LCD Peripheral Configuration
+ # end of LCD and Touch Panel
+ 
++#
++# ESP-MM: Memory Management Configurations
++#
++# CONFIG_ESP_MM_CACHE_MSYNC_C2M_CHUNKED_OPS is not set
++# end of ESP-MM: Memory Management Configurations
++
+ #
+ # ESP NETIF Adapter
+ #
+@@ -991,6 +1002,7 @@ CONFIG_ESP_NETIF_REPORT_DATA_TRAFFIC=y
+ # CONFIG_ESP_NETIF_RECEIVE_REPORT_ERRORS is not set
+ # CONFIG_ESP_NETIF_L2_TAP is not set
+ # CONFIG_ESP_NETIF_BRIDGE_EN is not set
++# CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF is not set
+ # end of ESP NETIF Adapter
+ 
+ #
+@@ -1027,36 +1039,7 @@ CONFIG_PM_RESTORE_CACHE_TAGMEM_AFTER_LIGHT_SLEEP=y
+ #
+ # ESP PSRAM
+ #
+-CONFIG_SPIRAM=y
+-
+-#
+-# SPI RAM config
+-#
+-# CONFIG_SPIRAM_MODE_QUAD is not set
+-CONFIG_SPIRAM_MODE_OCT=y
+-CONFIG_SPIRAM_TYPE_AUTO=y
+-# CONFIG_SPIRAM_TYPE_ESPPSRAM64 is not set
+-CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+-CONFIG_SPIRAM_CLK_IO=30
+-CONFIG_SPIRAM_CS_IO=26
+-# CONFIG_SPIRAM_XIP_FROM_PSRAM is not set
+-# CONFIG_SPIRAM_FETCH_INSTRUCTIONS is not set
+-# CONFIG_SPIRAM_RODATA is not set
+-CONFIG_SPIRAM_SPEED_80M=y
+-# CONFIG_SPIRAM_SPEED_40M is not set
+-CONFIG_SPIRAM_SPEED=80
+-# CONFIG_SPIRAM_ECC_ENABLE is not set
+-CONFIG_SPIRAM_BOOT_INIT=y
+-CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+-# CONFIG_SPIRAM_USE_MEMMAP is not set
+-# CONFIG_SPIRAM_USE_CAPS_ALLOC is not set
+-CONFIG_SPIRAM_USE_MALLOC=y
+-CONFIG_SPIRAM_MEMTEST=y
+-CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
+-# CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP is not set
+-CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL=32768
+-# CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY is not set
+-# end of SPI RAM config
++# CONFIG_SPIRAM is not set
+ # end of ESP PSRAM
+ 
+ #
+@@ -1203,9 +1186,9 @@ CONFIG_ESP_WIFI_ENABLED=y
+ CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=16
+ CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=64
+ CONFIG_ESP_WIFI_STATIC_TX_BUFFER=y
++# CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER is not set
+ CONFIG_ESP_WIFI_TX_BUFFER_TYPE=0
+ CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM=16
+-CONFIG_ESP_WIFI_CACHE_TX_BUFFER_NUM=32
+ CONFIG_ESP_WIFI_STATIC_RX_MGMT_BUFFER=y
+ # CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUFFER is not set
+ CONFIG_ESP_WIFI_DYNAMIC_RX_MGMT_BUF=0
+@@ -1215,7 +1198,6 @@ CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
+ CONFIG_ESP_WIFI_TX_BA_WIN=6
+ CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
+ CONFIG_ESP_WIFI_RX_BA_WIN=6
+-# CONFIG_ESP_WIFI_AMSDU_TX_ENABLED is not set
+ CONFIG_ESP_WIFI_NVS_ENABLED=y
+ CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0=y
+ # CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_1 is not set
+@@ -1306,7 +1288,6 @@ CONFIG_FATFS_CODEPAGE=437
+ CONFIG_FATFS_FS_LOCK=0
+ CONFIG_FATFS_TIMEOUT_MS=10000
+ CONFIG_FATFS_PER_FILE_CACHE=y
+-CONFIG_FATFS_ALLOC_PREFER_EXTRAM=y
+ # CONFIG_FATFS_USE_FASTSEEK is not set
+ CONFIG_FATFS_USE_STRFUNC_NONE=y
+ # CONFIG_FATFS_USE_STRFUNC_WITHOUT_CRLF_CONV is not set
+@@ -1558,9 +1539,9 @@ CONFIG_LWIP_TCPIP_TASK_AFFINITY_NO_AFFINITY=y
+ # CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU0 is not set
+ # CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1 is not set
+ CONFIG_LWIP_TCPIP_TASK_AFFINITY=0x7FFFFFFF
+-# CONFIG_LWIP_PPP_SUPPORT is not set
+ CONFIG_LWIP_IPV6_MEMP_NUM_ND6_QUEUE=3
+ CONFIG_LWIP_IPV6_ND6_NUM_NEIGHBORS=5
++# CONFIG_LWIP_PPP_SUPPORT is not set
+ # CONFIG_LWIP_SLIP_SUPPORT is not set
+ 
+ #
+@@ -1593,6 +1574,7 @@ CONFIG_LWIP_SNTP_MAXIMUM_STARTUP_DELAY=5000
+ CONFIG_LWIP_DNS_MAX_HOST_IP=1
+ CONFIG_LWIP_DNS_MAX_SERVERS=3
+ # CONFIG_LWIP_FALLBACK_DNS_SERVER_SUPPORT is not set
++# CONFIG_LWIP_DNS_SETSERVER_WITH_NETIF is not set
+ # end of DNS
+ 
+ CONFIG_LWIP_BRIDGEIF_MAX_PORTS=7
+@@ -1628,7 +1610,6 @@ CONFIG_LWIP_HOOK_IP6_INPUT_NONE=y
+ # mbedTLS
+ #
+ CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC=y
+-# CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC is not set
+ # CONFIG_MBEDTLS_DEFAULT_MEM_ALLOC is not set
+ # CONFIG_MBEDTLS_CUSTOM_MEM_ALLOC is not set
+ CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
+@@ -1789,15 +1770,12 @@ CONFIG_NEWLIB_TIME_SYSCALL_USE_RTC_HRT=y
+ # CONFIG_NEWLIB_TIME_SYSCALL_USE_NONE is not set
+ # end of Newlib
+ 
+-CONFIG_STDATOMIC_S32C1I_SPIRAM_WORKAROUND=y
+-
+ #
+ # NVS
+ #
+ # CONFIG_NVS_ENCRYPTION is not set
+ # CONFIG_NVS_ASSERT_ERROR_CHECK is not set
+ # CONFIG_NVS_LEGACY_DUP_KEYS_COMPATIBILITY is not set
+-# CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM is not set
+ # end of NVS
+ 
+ #
+@@ -2008,13 +1986,20 @@ CONFIG_USB_HOST_CONTROL_TRANSFER_MAX_SIZE=2048
+ CONFIG_USB_HOST_HW_BUFFER_BIAS_PERIODIC_OUT=y
+ 
+ #
+-# Root Hub configuration
++# Hub Driver Configuration
++#
++
++#
++# Root Port configuration
+ #
+ CONFIG_USB_HOST_DEBOUNCE_DELAY_MS=250
+ CONFIG_USB_HOST_RESET_HOLD_MS=30
+ CONFIG_USB_HOST_RESET_RECOVERY_MS=30
+ CONFIG_USB_HOST_SET_ADDR_RECOVERY_MS=10
+-# end of Root Hub configuration
++# end of Root Port configuration
++
++# CONFIG_USB_HOST_HUBS_SUPPORTED is not set
++# end of Hub Driver Configuration
+ 
+ # CONFIG_USB_HOST_ENABLE_ENUM_FILTER_CALLBACK is not set
+ CONFIG_USB_OTG_SUPPORTED=y
+@@ -2114,6 +2099,7 @@ CONFIG_POST_EVENTS_FROM_IRAM_ISR=y
+ CONFIG_GDBSTUB_SUPPORT_TASKS=y
+ CONFIG_GDBSTUB_MAX_TASKS=32
+ # CONFIG_OTA_ALLOW_HTTP is not set
++# CONFIG_ESP_SYSTEM_PD_FLASH is not set
+ CONFIG_ESP32S3_DEEP_SLEEP_WAKEUP_DELAY=2000
+ CONFIG_ESP_SLEEP_DEEP_SLEEP_WAKEUP_DELAY=2000
+ CONFIG_ESP32S3_RTC_CLK_SRC_INT_RC=y
+@@ -2129,9 +2115,7 @@ CONFIG_ESP32_PHY_MAX_TX_POWER=20
+ # CONFIG_ESP32_REDUCE_PHY_TX_POWER is not set
+ CONFIG_ESP_SYSTEM_PM_POWER_DOWN_CPU=y
+ CONFIG_PM_POWER_DOWN_TAGMEM_IN_LIGHT_SLEEP=y
+-CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+-CONFIG_DEFAULT_PSRAM_CLK_IO=30
+-CONFIG_DEFAULT_PSRAM_CS_IO=26
++# CONFIG_ESP32S3_SPIRAM_SUPPORT is not set
+ # CONFIG_ESP32S3_DEFAULT_CPU_FREQ_80 is not set
+ CONFIG_ESP32S3_DEFAULT_CPU_FREQ_160=y
+ # CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240 is not set
+@@ -2174,9 +2158,9 @@ CONFIG_ESP32_WIFI_ENABLED=y
+ CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM=16
+ CONFIG_ESP32_WIFI_DYNAMIC_RX_BUFFER_NUM=64
+ CONFIG_ESP32_WIFI_STATIC_TX_BUFFER=y
++# CONFIG_ESP32_WIFI_DYNAMIC_TX_BUFFER is not set
+ CONFIG_ESP32_WIFI_TX_BUFFER_TYPE=0
+ CONFIG_ESP32_WIFI_STATIC_TX_BUFFER_NUM=16
+-CONFIG_ESP32_WIFI_CACHE_TX_BUFFER_NUM=32
+ # CONFIG_ESP32_WIFI_CSI_ENABLED is not set
+ CONFIG_ESP32_WIFI_AMPDU_TX_ENABLED=y
+ CONFIG_ESP32_WIFI_TX_BA_WIN=6
+@@ -2184,7 +2168,6 @@ CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED=y
+ CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED=y
+ CONFIG_ESP32_WIFI_RX_BA_WIN=6
+ CONFIG_ESP32_WIFI_RX_BA_WIN=6
+-# CONFIG_ESP32_WIFI_AMSDU_TX_ENABLED is not set
+ CONFIG_ESP32_WIFI_NVS_ENABLED=y
+ CONFIG_ESP32_WIFI_TASK_PINNED_TO_CORE_0=y
+ # CONFIG_ESP32_WIFI_TASK_PINNED_TO_CORE_1 is not set

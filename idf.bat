@@ -1,0 +1,24 @@
+@echo off
+set ESP_IDF_VERSION=5.4
+set ESP_ROM_ELF_DIR=C:\Espressif\tools\esp-rom-elfs\20240305\
+set IDF_CCACHE_ENABLE=1
+set IDF_COMPONENT_STORAGE_URL=file:///C:/Espressif/registry;default
+set IDF_DEACTIVATE_FILE_PATH=C:\Users\Nathan\AppData\Local\Temp\tmp5oewk8g8idf_24840
+set IDF_GIT=C:/Espressif/tools/idf-git/2.44.0/cmd/git.exe
+set IDF_GIT_DIR=C:\Espressif\tools\idf-git\2.44.0\cmd\
+set IDF_PATH=C:\Espressif\frameworks\esp-idf-master
+set IDF_PYTHON=C:/Espressif/python_env/idf5.4_py3.11_env/Scripts/python.exe
+set IDF_PYTHON_DIR=C:\Espressif\python_env\idf5.4_py3.11_env\Scripts\
+set IDF_PYTHON_ENV_PATH=C:\Espressif\python_env\idf5.4_py3.11_env
+set IDF_TOOLS_PATH=C:\Espressif
+set OPENOCD_SCRIPTS=C:\Espressif\tools\openocd-esp32\v0.12.0-esp32-20240318\openocd-esp32\share\openocd\scripts
+set PARAM=esp-idf-e4df195985c9ef406945edd130a47c8d
+set Path=C:\Espressif\tools\xtensa-esp-elf-gdb\14.2_20240403\xtensa-esp-elf-gdb\bin;C:\Espressif\tools\riscv32-esp-elf-gdb\14.2_20240403\riscv32-esp-elf-gdb\bin;C:\Espressif\tools\xtensa-esp-elf\esp-13.2.0_20240530\xtensa-esp-elf\bin;C:\Espressif\tools\riscv32-esp-elf\esp-13.2.0_20240530\riscv32-esp-elf\bin;C:\Espressif\tools\esp32ulp-elf\2.38_20240113\esp32ulp-elf\bin;C:\Espressif\tools\cmake\3.24.0\bin;C:\Espressif\tools\openocd-esp32\v0.12.0-esp32-20240318\openocd-esp32\bin;C:\Espressif\tools\ninja\1.11.1\;C:\Espressif\tools\idf-exe\1.0.3\;C:\Espressif\tools\ccache\4.8\ccache-4.8-windows-x86_64;C:\Espressif\tools\dfu-util\0.11\dfu-util-0.11-win64;C:\Espressif\tools\xtensa-esp-elf-gdb\14.2_20240403\xtensa-esp-elf-gdb\bin;C:\Espressif\tools\riscv32-esp-elf-gdb\14.2_20240403\riscv32-esp-elf-gdb\bin;C:\Espressif\tools\xtensa-esp-elf\esp-13.2.0_20240530\xtensa-esp-elf\bin;C:\Espressif\tools\riscv32-esp-elf\esp-13.2.0_20240530\riscv32-esp-elf\bin;C:\Espressif\tools\esp32ulp-elf\2.38_20240113\esp32ulp-elf\bin;C:\Espressif\tools\cmake\3.24.0\bin;C:\Espressif\tools\openocd-esp32\v0.12.0-esp32-20240318\openocd-esp32\bin;C:\Espressif\tools\ninja\1.11.1\;C:\Espressif\tools\idf-exe\1.0.3\;C:\Espressif\tools\ccache\4.8\ccache-4.8-windows-x86_64;C:\Espressif\tools\dfu-util\0.11\dfu-util-0.11-win64;c:\Espressif\frameworks\esp-idf-master\tools;C:\Espressif\tools\xtensa-esp-elf-gdb\14.2_20240403\xtensa-esp-elf-gdb\bin;C:\Espressif\tools\riscv32-esp-elf-gdb\14.2_20240403\riscv32-esp-elf-gdb\bin;C:\Espressif\tools\xtensa-esp-elf\esp-13.2.0_20240530\xtensa-esp-elf\bin;C:\Espressif\tools\riscv32-esp-elf\esp-13.2.0_20240530\riscv32-esp-elf\bin;C:\Espressif\tools\esp32ulp-elf\2.38_20240113\esp32ulp-elf\bin;C:\Espressif\tools\cmake\3.24.0\bin;C:\Espressif\tools\openocd-esp32\v0.12.0-esp32-20240318\openocd-esp32\bin;C:\Espressif\tools\ninja\1.11.1\;C:\Espressif\tools\idf-exe\1.0.3\;C:\Espressif\tools\ccache\4.8\ccache-4.8-windows-x86_64;C:\Espressif\tools\dfu-util\0.11\dfu-util-0.11-win64;C:\Espressif\frameworks\esp-idf-master\tools;C:\Espressif\python_env\idf5.4_py3.11_env\Scripts\;C:\Espressif\tools\idf-git\2.44.0\cmd\;C:\Espressif;C:\Program Files\Python312\Scripts\;C:\Program Files\Python312\;C:\Program Files\Common Files\Oracle\Java\javapath;C:\Program Files\Eclipse Adoptium\jre-21.0.0.35-hotspot\bin;C:\Program Files\Eclipse Adoptium\jre-8.0.392.8-hotspot\bin;C:\Program Files\Eclipse Adoptium\jre-17.0.8.101-hotspot\bin;C:\Program Files\Eclipse Adoptium\jre-11.0.21.9-hotspot\bin;C:\Program Files (x86)\Eclipse Adoptium\jre-8.0.392.8-hotspot\bin;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\PuTTY\;C:\Program Files\Microsoft VS Code\bin;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program Files\dotnet\;C:\ProgramData\chocolatey\bin;C:\Program Files\Git\cmd;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\Program Files (x86)\dotnet\;C:\Strawberry\c\bin;C:\Strawberry\perl\site\bin;C:\Strawberry\perl\bin;C:\Program Files\nodejs\;C:\Program Files\PowerShell\7\;C:\Program Files\NVIDIA Corporation\NVIDIA app\NvDLISR;C:\Users\Nathan\AppData\Local\Microsoft\WindowsApps;C:\Users\Nathan\AppData\Local\GitHubDesktop\bin;C:\Users\Nathan\AppData\Local\Programs\Ollama;C:\Users\Nathan\.dotnet\tools;C:\Users\Nathan\AppData\Roaming\npm;C:\Users\Nathan\AppData\Local\Programs\Microsoft VS Code Insiders\bin;
+set PREFIX=C:/Espressif/python_env/idf5.4_py3.11_env/Scripts/python.exe C:/Espressif/frameworks/esp-idf-master/
+set PROCESSOR_ARCHITECTURE=AMD64
+set PYTHONNOUSERSITE=True
+set TEMP_IDF_GIT_PATH="C:\Users\Nathan\AppData\Local\Temp\idf-git-path.txt"
+set TEMP_IDF_PATH=C:\Users\Nathan\AppData\Local\Temp\idf-path.txt
+set TEMP_IDF_PYTHON_PATH="C:\Users\Nathan\AppData\Local\Temp\idf-python-path.txt"
+call c:\Espressif\frameworks\esp-idf-master\export.bat
+idf.py %1 %2 %3 %4 %5 %6 %7 %8 %9

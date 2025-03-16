@@ -1,0 +1,17 @@
+menu "Web Server Configuration"
+
+    config HTTPD_MAX_REQ_HDR_LEN
+        int "Max HTTP Request Header Length"
+        default 2048
+        help
+            This sets the maximum size of HTTP request headers in bytes.
+            Increase this value if you need to handle large headers.
+
+    config HTTPD_MAX_URI_LEN
+        int "Max HTTP URI Length"
+        default 1024
+        help
+            This sets the maximum size of HTTP URIs in bytes.
+            Increase this value if you need to handle long URIs.
+
+endmenu

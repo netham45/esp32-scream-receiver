@@ -1,0 +1,59 @@
+Checking Python compatibility
+Setting IDF_PATH: c:\Espressif\frameworks\esp-idf-master
+
+Adding ESP-IDF tools to PATH...
+    C:\Espressif\tools\xtensa-esp-elf-gdb\14.2_20240403\xtensa-esp-elf-gdb\bin
+    C:\Espressif\tools\riscv32-esp-elf-gdb\14.2_20240403\riscv32-esp-elf-gdb\bin
+    C:\Espressif\tools\xtensa-esp-elf\esp-13.2.0_20240530\xtensa-esp-elf\bin
+    C:\Espressif\tools\riscv32-esp-elf\esp-13.2.0_20240530\riscv32-esp-elf\bin
+    C:\Espressif\tools\esp32ulp-elf\2.38_20240113\esp32ulp-elf\bin
+    C:\Espressif\tools\cmake\3.24.0\bin
+    C:\Espressif\tools\openocd-esp32\v0.12.0-esp32-20240318\openocd-esp32\bin
+    C:\Espressif\tools\ninja\1.11.1\
+    C:\Espressif\tools\idf-exe\1.0.3\
+    C:\Espressif\tools\ccache\4.8\ccache-4.8-windows-x86_64
+    C:\Espressif\tools\dfu-util\0.11\dfu-util-0.11-win64
+    
+Checking if Python packages are up to date...
+Python requirements are satisfied.
+Constraint file: C:\Espressif\espidf.constraints.v5.4.txt
+Requirement files:
+ - c:\Espressif\frameworks\esp-idf-master\tools\requirements\requirements.core.txt
+Python being checked: C:\Espressif\python_env\idf5.4_py3.11_env\Scripts\python.exe
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+Executing action: all (aliases: build)
+Running ninja in directory C:\Users\Nathan\Documents\GitHub\esp32-scream-receiver\build
+Executing "ninja all"...
+[1/10] Performing build step for 'bootloader'
+[1/1] cmd.exe /C "cd /D C:\Users\Nathan\Documents\GitHub\esp32-scream-receiver\build\bootloader\esp-idf\esptool_py && C:\Espressif\python_env\idf5.4_py3.11_env\Scripts\python.exe C:/Espressif/frameworks/esp-idf-master/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x0 C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/build/bootloader/bootloader.bin"
+Bootloader binary size 0x5830 bytes. 0x27d0 bytes (31%) free.
+[2/8] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/network.c.obj
+[3/8] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/web_server.c.obj
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:20:21: warning: 's_dns_netif' defined but not used [-Wunused-variable]
+   20 | static esp_netif_t *s_dns_netif = NULL;
+      |                     ^~~~~~~~~~~
+[4/8] Linking C static library esp-idf\main\libmain.a
+[5/8] Generating ld/sections.ld
+[6/8] Linking CXX executable usb_audio_player.elf
+[7/8] Generating binary image from built executable
+esptool.py v4.8.dev4
+Creating esp32s3 image...
+Merged 2 ELF sections
+Successfully created esp32s3 image.
+Generated C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/build/usb_audio_player.bin
+[8/8] cmd.exe /C "cd /D C:\Users\Nathan\Documents\GitHub\esp32-scream-receiver\build\esp-idf\esptool_py && C:\Espressif\python_env\idf5.4_py3.11_env\Scripts\python.exe C:/Espressif/frameworks/esp-idf-master/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/build/partition_table/partition-table.bin C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/build/usb_audio_player.bin"
+usb_audio_player.bin binary size 0xe9eb0 bytes. Smallest app partition is 0x100000 bytes. 0x16150 bytes (9%) free.
+
+Project build complete. To flash, run:
+ idf.py flash
+or
+ idf.py -p PORT flash
+or
+ python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 4MB --flash_freq 80m 0x0 build\bootloader\bootloader.bin 0x8000 build\partition_table\partition-table.bin 0x10000 build\usb_audio_player.bin
+or from the "C:\Users\Nathan\Documents\GitHub\esp32-scream-receiver\build" directory
+ python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash "@flash_args"

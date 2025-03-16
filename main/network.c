@@ -22,8 +22,13 @@
 #include <netdb.h>            // struct addrinfo
 #include <arpa/inet.h>
 #include "esp_netif.h"
-#include "secrets.h"
 #include "audio.h"
+#include "wifi_manager.h"
+
+// Reference to sleep mode monitoring variables
+extern volatile uint32_t packet_counter;
+extern volatile bool monitoring_active;
+extern volatile TickType_t last_packet_time;
 
 const uint16_t HEADER_SIZE = 5;                         // Scream Header byte size, non-configurable (Part of Scream)
 const uint16_t PACKET_SIZE = PCM_CHUNK_SIZE + HEADER_SIZE;
@@ -56,7 +61,7 @@ void tcp_handler(void *) {
     ESP_LOGI(TAG, "Failed to connect");
 	int err = connect(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
 	if (err != 0) {
-		ESP_LOGE(TAG, "Socket unable to connect: errno %d", errno);
+                ESP_LOGE(TAG, "Socket unable to connect: errno %d", errno);
 	} else {
 		connected = true;
 		break;
@@ -74,6 +79,13 @@ void tcp_handler(void *) {
 	if (!result)
 		connected = false;
 	datahead += result;
+	
+	// Track packet reception for activity detection during sleep mode
+	if (result > 0 && monitoring_active) {
+	    packet_counter++;
+	    last_packet_time = xTaskGetTickCount(); // Update last packet time
+	}
+	
 	if (datahead >= PACKET_SIZE) {
 		//push_chunk(data + HEADER_SIZE);
 		audio_direct_write(data + HEADER_SIZE);
@@ -114,7 +126,7 @@ void udp_handler(void *) {
         if (err < 0) {
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         }
-        ESP_LOGI(TAG, "Socket bound, port %d", PORT);
+        ESP_LOGI(TAG, "Socket bound, port %" PRIu16, PORT);
         
         // Only try to resume playback if we're not in sleep mode
         if (!device_sleeping) {
@@ -124,6 +136,16 @@ void udp_handler(void *) {
         }
         while (1) {
             int result = recv(sock, data + datahead, PACKET_SIZE, 0);
+			
+			// Track packet reception for activity detection during sleep mode
+			if (result > 0 && monitoring_active) {
+			    packet_counter++;
+			    last_packet_time = xTaskGetTickCount(); // Update last packet time
+			    
+			    // If we're in sleep mode and detected sufficient activity, 
+			    // this will be handled by the monitor task
+			}
+			
 			if (result && use_tcp) {
 				struct sockaddr_in addr;
 				socklen_t addrlen = sizeof(struct sockaddr_in);

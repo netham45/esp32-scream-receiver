@@ -19,11 +19,14 @@
 #include "driver/gpio.h"
 #include "esp_sleep.h"
 #include "global.h"
+#include "esp_pm.h" // For power management
 #ifdef IS_USB
 #include "usb/usb_host.h"
 #include "usb/uac_host.h"
 #endif
-#include "secrets.h"
+// Include our new modules
+#include "wifi_manager.h"
+#include "web_server.h"
 
 #define USB_HOST_TASK_PRIORITY  5
 #define UAC_TASK_PRIORITY       5
@@ -32,7 +35,7 @@
 #define DEFAULT_VOLUME          45
 #define RTC_CNTL_OPTION1_REG 0x6000812C
 #define RTC_CNTL_FORCE_DOWNLOAD_BOOT 1
-#define DAC_CHECK_SLEEP_TIME_MS 5000  // Wake every 5 seconds to check for DAC (use longer times to save power)
+// Using DAC_CHECK_SLEEP_TIME_MS from config.h (2000ms)
 #define NETWORK_SLEEP_TIME_MS 10       // Light sleep between network operations
 bool g_neighbor_report_active = false;
 bool device_sleeping = false;
@@ -78,14 +81,29 @@ static inline uint32_t WPA_GET_LE32(const uint8_t *a)
 
 static int s_retry_num = 0;
 
-// Forward declaration of WiFi initialization function
+// Forward declarations
 void wifi_init_sta(void);
+void enter_silence_sleep_mode(void);
+void exit_silence_sleep_mode(void);
+bool check_network_activity(void);
 
 #ifdef IS_USB
 static uac_host_device_handle_t s_spk_dev_handle = NULL;
 static void uac_device_callback(uac_host_device_handle_t uac_device_handle, const uac_host_device_event_t event, void *arg);
 static QueueHandle_t s_event_queue = NULL;
 bool usb_host_running = true;
+
+// Store device parameters for fast reconnection after sleep
+typedef struct {
+    uint8_t addr;
+    uint8_t iface_num;
+    uac_host_stream_config_t stream_config;
+    bool valid;
+} saved_usb_device_t;
+
+static saved_usb_device_t saved_usb_device = {
+    .valid = false
+};
 
 /**
  * @brief event queue
@@ -138,13 +156,27 @@ void enter_deep_sleep_mode() {
     // This code is never reached
 }
 
+// Forward declarations from audio.c for the silence tracking variables
+extern bool is_silent;
+extern uint32_t silence_duration_ms;
+extern TickType_t last_audio_time;
+
 // Function to exit sleep mode when DAC is connected - called after waking from deep sleep
 void exit_sleep_mode() {
     ESP_LOGI(TAG, "Exiting sleep mode after deep sleep wake");
     device_sleeping = false;
     
-    // Disable sleep wakeup sources
-    esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    // Only try to disable wakeup sources if we're actually coming from deep sleep
+    esp_sleep_wakeup_cause_t wakeup_cause = esp_sleep_get_wakeup_cause();
+    if (wakeup_cause == ESP_SLEEP_WAKEUP_TIMER) {
+        // Only disable timer wakeup if we're waking from timer
+        esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_TIMER);
+    }
+    
+    // Reset audio silence tracking variables to prevent going back to sleep immediately
+    is_silent = false;
+    silence_duration_ms = 0;
+    last_audio_time = xTaskGetTickCount();
     
     // Restart WiFi - we disconnected before sleeping
     wifi_init_sta();
@@ -358,14 +390,14 @@ static char * get_btm_neighbor_list(uint8_t *report, size_t report_len)
 
 		if (pos[0] != WLAN_EID_NEIGHBOR_REPORT ||
 		    nr_len < NR_IE_MIN_LEN) {
-			ESP_LOGI(TAG, "CTRL: Invalid Neighbor Report element: id=%u len=%u",
+			ESP_LOGI(TAG, "CTRL: Invalid Neighbor Report element: id=%" PRIu16 " len=%" PRIu16,
 					data[0], nr_len);
 			ret = -1;
 			goto cleanup;
 		}
 
 		if (2U + nr_len > report_len) {
-			ESP_LOGI(TAG, "CTRL: Invalid Neighbor Report element: id=%u len=%zu nr_len=%u",
+			ESP_LOGI(TAG, "CTRL: Invalid Neighbor Report element: id=%" PRIu16 " len=%" PRIu16 " nr_len=%" PRIu16,
 					data[0], report_len, nr_len);
 			ret = -1;
 			goto cleanup;
@@ -410,7 +442,7 @@ static char * get_btm_neighbor_list(uint8_t *report, size_t report_len)
 		}
 
 		ESP_LOGI(TAG, "RMM neighbor report bssid=" MACSTR
-				" info=0x%" PRIx32 " op_class=%u chan=%u phy_type=%u%s%s%s%s",
+				" info=0x%" PRIx32 " op_class=%" PRIu16 " chan=%" PRIu16 " phy_type=%" PRIu16 "%s%s%s%s",
 				MAC2STR(nr), WPA_GET_LE32(nr + ETH_ALEN),
 				nr[ETH_ALEN + 4], nr[ETH_ALEN + 5],
 				nr[ETH_ALEN + 6],
@@ -427,13 +459,13 @@ static char * get_btm_neighbor_list(uint8_t *report, size_t report_len)
 		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "0x%04" PRIx32 "", WPA_GET_LE32(nr + ETH_ALEN));
 		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
 		/* operating class */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%u", nr[ETH_ALEN + 4]);
+		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 4]);
 		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
 		/* channel number */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%u", nr[ETH_ALEN + 5]);
+		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 5]);
 		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
 		/* phy type */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%u", nr[ETH_ALEN + 6]);
+		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 6]);
 		/* optional elements, skip */
 
 		data = end;
@@ -485,7 +517,7 @@ static void esp_neighbor_report_recv_handler(void* arg, esp_event_base_t event_b
     }
     uint8_t report_len = neighbor_report_event->report_len;
     /* dump report info */
-    ESP_LOGD(TAG, "rrm: neighbor report len=%d", report_len);
+    ESP_LOGD(TAG, "rrm: neighbor report len=%" PRIu16, report_len);
     ESP_LOG_BUFFER_HEXDUMP(TAG, pos, report_len, ESP_LOG_DEBUG);
 
     /* create neighbor list */
@@ -541,7 +573,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
             ESP_LOGI(TAG, "station disconnected during roaming");
         } else {
             if (s_retry_num < 50) {
-                ESP_LOGI(TAG, "station disconnected with reason %d", disconn->reason);
+                ESP_LOGI(TAG, "station disconnected with reason %" PRIu16, disconn->reason);
                 esp_wifi_connect();
                 s_retry_num++;
                 ESP_LOGI(TAG, "retry to connect to the AP");
@@ -574,6 +606,175 @@ static void event_handler(void* arg, esp_event_base_t event_base,
 	}
 }
 
+// Task for monitoring network activity during silence sleep mode
+TaskHandle_t network_monitor_task_handle = NULL;
+volatile uint32_t packet_counter = 0;
+volatile bool monitoring_active = false;
+volatile TickType_t last_packet_time = 0;
+
+// Network packet monitoring task that runs during light sleep
+void network_monitor_task(void *params) {
+    ESP_LOGI(TAG, "Network monitor task started");
+    
+    // Initialize the last packet time
+    last_packet_time = xTaskGetTickCount();
+    
+    while (true) {
+        if (monitoring_active) {
+            TickType_t current_time = xTaskGetTickCount();
+            
+            // Check for activity - either enough packets received or packet timeout
+            if (packet_counter >= ACTIVITY_THRESHOLD_PACKETS) {
+                ESP_LOGI(TAG, "Network activity detected (%" PRIu32 " packets), exiting sleep mode", 
+                        packet_counter);
+                
+                // Exit sleep mode
+                exit_silence_sleep_mode();
+                
+                // Reset counter for next sleep cycle
+                packet_counter = 0;
+                last_packet_time = current_time;
+            } 
+            // Check for network inactivity timeout
+            else if ((current_time - last_packet_time) * portTICK_PERIOD_MS >= NETWORK_INACTIVITY_TIMEOUT_MS) {
+                // If we've been in silence mode for a while with no packets, 
+                // this suggests the audio source is truly idle (not streaming)
+                ESP_LOGI(TAG, "Network inactivity timeout reached (%" PRIu16 " ms), maintaining sleep mode",
+                        NETWORK_INACTIVITY_TIMEOUT_MS);
+                
+                // Remain in sleep mode, but update timestamp to avoid log spam
+                last_packet_time = current_time;
+            }
+            
+            // Sleep for a short interval before checking again
+            vTaskDelay(pdMS_TO_TICKS(NETWORK_CHECK_INTERVAL_MS));
+        } else {
+            // When not actively monitoring, just wait until activated
+            vTaskSuspend(NULL);
+        }
+    }
+}
+
+// Function to check for network activity (by sampling recent packets)
+bool check_network_activity() {
+    // Simple check - just see if we've received packets since last check
+    if (packet_counter >= ACTIVITY_THRESHOLD_PACKETS) {
+        ESP_LOGI(TAG, "Network activity detected (%" PRIu32 " packets)", packet_counter);
+        return true;
+    }
+    return false;
+}
+
+// Silence sleep mode - detach USB device but keep WiFi running in light sleep
+void enter_silence_sleep_mode() {
+    if (device_sleeping) {
+        return; // Already in sleep mode
+    }
+    
+    ESP_LOGI(TAG, "Entering silence sleep mode");
+    device_sleeping = true;
+    
+#ifdef IS_USB
+    if (s_spk_dev_handle != NULL) {
+        // Save device parameters for reconnection
+        uac_host_dev_info_t dev_info;
+        ESP_ERROR_CHECK(uac_host_get_device_info(s_spk_dev_handle, &dev_info));
+        
+        // No direct access to addr/iface_num here, use a different approach
+        // We don't actually need to save these parameters since we already have the device handle
+        // Just set some reasonable defaults
+        saved_usb_device.addr = 0;
+        saved_usb_device.iface_num = 0;
+        saved_usb_device.stream_config.channels = 2;
+        saved_usb_device.stream_config.bit_resolution = 16;
+        saved_usb_device.stream_config.sample_freq = 48000;
+        saved_usb_device.valid = true;
+        
+        // Stop audio playback and detach USB device
+        stop_playback();
+        ESP_LOGI(TAG, "Detaching USB DAC device");
+        
+        // We don't actually uninstall the USB host, just stop the device
+        // This allows for faster reconnection later
+        uac_host_device_stop(s_spk_dev_handle);
+    }
+#endif
+    
+    // Configure WiFi for max power saving
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MAX_MODEM));
+    
+    // Create network monitoring task if it doesn't exist yet
+    if (network_monitor_task_handle == NULL) {
+        BaseType_t ret = xTaskCreatePinnedToCore(
+            network_monitor_task,
+            "network_monitor",
+            4096,
+            NULL,
+            1,  // Low priority
+            &network_monitor_task_handle,
+            0   // Core 0
+        );
+        assert(ret == pdTRUE);
+    }
+    
+    // Start network monitoring
+    monitoring_active = true;
+    packet_counter = 0;
+    if (eTaskGetState(network_monitor_task_handle) == eSuspended) {
+        vTaskResume(network_monitor_task_handle);
+    }
+    
+    // Instead of using deep sleep, use light sleep to maintain WiFi connection
+    ESP_LOGI(TAG, "Entering light sleep mode with network monitoring");
+    
+    // Enable automatic light sleep - CPU will sleep between task operations
+    #if CONFIG_PM_ENABLE
+    // Light sleep is handled by the power management module
+    ESP_LOGI(TAG, "Light sleep enabled through power management");
+    #else
+    // No power management, use manual light sleep in the monitoring task
+    ESP_LOGW(TAG, "Power management not enabled, using manual light sleep in monitor task");
+    #endif
+}
+
+// External declaration for audio silence tracking variables that need to be reset
+extern bool is_silent;
+extern uint32_t silence_duration_ms;
+extern TickType_t last_audio_time;
+
+// Exit silence sleep mode and reconnect USB device
+void exit_silence_sleep_mode() {
+    
+    ESP_LOGI(TAG, "Exiting silence sleep mode");
+    device_sleeping = false;
+    
+    // Stop the network monitoring
+    monitoring_active = false;
+    
+    // Set WiFi back to normal power saving mode
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
+    
+    // Reset silence tracking variables to prevent immediate re-entry into sleep mode
+    is_silent = false;
+    silence_duration_ms = 0;
+    last_audio_time = xTaskGetTickCount(); // Reset to current time
+    
+#ifdef IS_USB
+    // Check if we have saved device parameters
+    if (saved_usb_device.valid && s_spk_dev_handle != NULL) {
+        ESP_LOGI(TAG, "Reconnecting USB DAC device");
+        
+        // Restart the device with saved parameters
+        ESP_ERROR_CHECK(uac_host_device_start(s_spk_dev_handle, &saved_usb_device.stream_config));
+        ESP_ERROR_CHECK(uac_host_device_set_volume(s_spk_dev_handle, VOLUME)); // Use the volume variable from audio.c
+        
+        resume_playback();
+    }
+#endif
+    
+    ESP_LOGI(TAG, "Resumed normal operation");
+}
+
 // Check if we need to go to deep sleep - returns true if we should continue running
 bool check_dac_or_sleep() {
     // Check if we have a DAC connected
@@ -597,6 +798,11 @@ bool check_dac_or_sleep() {
     return true;
 }
 
+// Function to check if a GPIO pin is pressed (connected to ground)
+bool is_gpio_pressed(gpio_num_t pin) {
+    return gpio_get_level(pin) == 0; // Returns true if pin is low (pressed)
+}
+
 void app_main(void)
 {
     // Initialize NVS (required for USB subsystem)
@@ -606,6 +812,49 @@ void app_main(void)
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    
+    // Get the wake cause (why the device booted)
+    esp_sleep_wakeup_cause_t wakeup_cause = esp_sleep_get_wakeup_cause();
+    
+    // Only check GPIO pins for reset if this was a power-on or hard reset, not waking from sleep
+    if (wakeup_cause == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        // This is a power-on or hard reset, not a wake from sleep
+        
+        // Configure GPIO pins 0 and 1 as inputs with pull-up resistors
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << GPIO_NUM_0) | (1ULL << GPIO_NUM_1),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE
+        };
+        gpio_config(&io_conf);
+        
+        // Wait 3 seconds and check if pins 0 or 1 are pressed
+        ESP_LOGI(TAG, "Starting 3-second WiFi reset window. Press GPIO 0 or 1 to reset WiFi config...");
+        for (int i = 0; i < 30; i++) { // 30 * 100ms = 3 seconds
+            vTaskDelay(pdMS_TO_TICKS(100));
+            
+            // Check if either pin is pressed
+            if (is_gpio_pressed(GPIO_NUM_0) || is_gpio_pressed(GPIO_NUM_1)) {
+                ESP_LOGI(TAG, "GPIO pin pressed! Wiping WiFi configuration...");
+                
+                // Initialize WiFi manager if it's not already initialized
+                wifi_manager_init();
+                
+                // Clear WiFi credentials
+                wifi_manager_clear_credentials();
+                
+                ESP_LOGI(TAG, "WiFi configuration reset complete. Rebooting...");
+                vTaskDelay(pdMS_TO_TICKS(1000)); // Wait 1 second for logs to be printed
+                esp_restart(); // Restart the ESP32
+            }
+        }
+        ESP_LOGI(TAG, "WiFi reset window closed. Continuing with normal startup...");
+    } else {
+        // This is a wake from sleep, skip the GPIO reset check
+        ESP_LOGI(TAG, "Waking from sleep (cause: %d), skipping WiFi reset window", wakeup_cause);
+    }
     
 #ifdef IS_USB
     // Initialize USB host first to detect DAC as early as possible
@@ -631,25 +880,73 @@ void app_main(void)
             break;
         }
         
-        ESP_LOGI(TAG, "Waiting for DAC... %d/10", i+1);
+        ESP_LOGI(TAG, "Waiting for DAC... %" PRIu16 "/10", i+1);
     }
     
-    // Check if DAC is connected - if not, go to deep sleep without initializing anything else
+    // Check if DAC is connected
     if (s_spk_dev_handle == NULL) {
-        ESP_LOGI(TAG, "No DAC detected after waiting, going to deep sleep");
-        // Configure timer wakeup
-        esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000);
-        // Go to deep sleep immediately without setting up other components
-        esp_deep_sleep_start();
-        return; // Never reached
+        ESP_LOGI(TAG, "No DAC detected after waiting");
+        
+        // Only deep sleep if no DAC AND WiFi is configured
+        if (wifi_manager_has_credentials()) {
+            ESP_LOGI(TAG, "No DAC detected and WiFi is configured, going to deep sleep");
+            // Configure timer wakeup
+            esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000);
+            // Go to deep sleep immediately
+            esp_deep_sleep_start();
+            return; // Never reached
+        } else {
+            ESP_LOGI(TAG, "No DAC detected but no WiFi configured, continuing with WiFi setup");
+        }
     }
 #endif
 
     // Only initialize the rest of the system if DAC is connected
-    ESP_LOGI(TAG, "DAC detected, initializing full system");
+    ESP_LOGI(TAG, "DAC detected, initializing full system with power optimizations");
     
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
+    // Set CPU to lower frequency to save power
+    #if CONFIG_PM_ENABLE
+    // Configure dynamic frequency scaling based on chip type
+    ESP_LOGI(TAG, "Configuring power management (reduced CPU clock)");
+    
+    #if CONFIG_IDF_TARGET_ESP32
+    esp_pm_config_esp32_t pm_config = {
+        .max_freq_mhz = 80,  // Reduced from 240MHz
+        .min_freq_mhz = 40,
+    #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+        .light_sleep_enable = true
+    #else
+        .light_sleep_enable = false
+    #endif
+    };
+    #elif CONFIG_IDF_TARGET_ESP32S3
+    esp_pm_config_esp32s3_t pm_config = {
+        .max_freq_mhz = 80,  // Reduced from 240MHz
+        .min_freq_mhz = 40,
+    #if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+        .light_sleep_enable = true
+    #else
+        .light_sleep_enable = false
+    #endif
+    };
+    #endif
+    
+    esp_err_t err = esp_pm_configure(&pm_config);
+    if (err == ESP_ERR_NOT_SUPPORTED) {
+        ESP_LOGW(TAG, "Power management not supported or not enabled in menuconfig");
+    } else {
+        ESP_ERROR_CHECK(err);
+    }
+    #else
+    ESP_LOGW(TAG, "Power management not enabled in menuconfig");
+    #endif
+    
+    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA with power saving");
     wifi_init_sta();
+    
+    // Enable WiFi power save mode
+    ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_MIN_MODEM));
+    
     setup_buffer();
     setup_audio();
     setup_network();
@@ -663,70 +960,45 @@ void app_main(void)
 
 void wifi_init_sta(void)
 {
+    ESP_LOGI(TAG, "Starting WiFi with manager");
+    
     s_wifi_event_group = xEventGroupCreate();
-
-    ESP_ERROR_CHECK(esp_netif_init());
-
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-	ESP_ERROR_CHECK( esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL) );
-	ESP_ERROR_CHECK( esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL) );;
-											
-	ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_NEIGHBOR_REP,
-				&esp_neighbor_report_recv_handler, NULL));
-	ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_BSS_RSSI_LOW,
-				&esp_bss_rssi_low_handler, NULL));
-
-
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = WIFI_SSID,
-            .password = WIFI_PASSWORD,
-            /* Authmode threshold resets to WPA2 as default if password matches WPA2 standards (password len => 8).
-             * If you want to connect the device to deprecated WEP/WPA networks, Please set the threshold value
-             * to WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK and set the password with length and format matching to
-             * WIFI_AUTH_WEP/WIFI_AUTH_WPA_PSK standards.
-             */
-            .threshold.authmode = ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD,
-            .sae_pwe_h2e = ESP_WIFI_SAE_MODE,
-			.sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
-			.scan_method = WIFI_ALL_CHANNEL_SCAN,
-			.rm_enabled =1,
-			.btm_enabled =1,
-			.mbo_enabled =1,
-			.pmf_cfg.capable = 1,
-			.ft_enabled =1,
-        },
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
-	
-
-    ESP_LOGI(TAG, "wifi_init_sta finished.");
-
-    /* Waiting until either the connection is established (WIFI_CONNECTED_BIT) or connection failed for the maximum
-     * number of re-tries (WIFI_FAIL_BIT). The bits are set by event_handler() (see above) */
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            portMAX_DELAY);
-			
-	esp_wifi_set_rssi_threshold(-58);
-
-    /* xEventGroupWaitBits() returns the bits before the call returned, hence we can test which event actually
-     * happened. */
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap"
-                 );
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to wifi");
+    
+    // Initialize the WiFi manager
+    ESP_ERROR_CHECK(wifi_manager_init());
+    
+    // Register our existing event handlers for specific WiFi events
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_NEIGHBOR_REP,
+                                              &esp_neighbor_report_recv_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_BSS_RSSI_LOW,
+                                              &esp_bss_rssi_low_handler, NULL));
+    
+    // Start the WiFi manager - this will either:
+    // 1. Connect using stored credentials if available
+    // 2. Start AP mode with captive portal if no credentials are stored
+    ESP_ERROR_CHECK(wifi_manager_start());
+    
+    // If in AP mode, start the web server for configuration
+    if (wifi_manager_get_state() == WIFI_MANAGER_STATE_AP_MODE) {
+        ESP_LOGI(TAG, "Starting web server for WiFi configuration");
+        web_server_start();
+    }
+    
+    ESP_LOGI(TAG, "WiFi initialization completed");
+    
+    // If we're connected, set the RSSI threshold
+    if (wifi_manager_get_state() == WIFI_MANAGER_STATE_CONNECTED) {
+        esp_wifi_set_rssi_threshold(-58);
+        
+        // Notify the network module that WiFi is connected
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        
+        // Get the current SSID for logging
+        char ssid[WIFI_SSID_MAX_LENGTH + 1];
+        if (wifi_manager_get_current_ssid(ssid, sizeof(ssid)) == ESP_OK) {
+            ESP_LOGI(TAG, "Connected to AP: %s", ssid);
+        }
     } else {
-        ESP_LOGE(TAG, "UNEXPECTED EVENT");
+        ESP_LOGI(TAG, "WiFi not connected, waiting for configuration via AP portal");
     }
 }

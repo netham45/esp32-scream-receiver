@@ -1,0 +1,472 @@
+ccache C:\Espressif\tools\xtensa-esp-elf\esp-13.2.0_20240530\xtensa-esp-elf\bin\xtensa-esp32s3-elf-gcc.exe -DESP_PLATFORM -DIDF_VER=\"v5.4-dev-1873-g41dd1a351b\" -DMBEDTLS_CONFIG_FILE=\"mbedtls/esp_config.h\" -DSOC_MMU_PAGE_SIZE=CONFIG_MMU_PAGE_SIZE -DSOC_XTAL_FREQ_MHZ=CONFIG_XTAL_FREQ -DUNITY_INCLUDE_CONFIG_H -D_GLIBCXX_HAVE_POSIX_SEMAPHORE -D_GLIBCXX_USE_POSIX_SEMAPHORE -D_GNU_SOURCE -D_POSIX_READER_WRITER_LOCKS -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/build/config -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main -IC:/Espressif/frameworks/esp-idf-master/components/newlib/platform_include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/include/freertos -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/portable/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/portable/xtensa/include/freertos -IC:/Espressif/frameworks/esp-idf-master/components/freertos/esp_additions/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include/soc -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include/soc/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/dma/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/ldo/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/debug_probe/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/port/esp32s3/. -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/port/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/heap/include -IC:/Espressif/frameworks/esp-idf-master/components/log/include -IC:/Espressif/frameworks/esp-idf-master/components/soc/include -IC:/Espressif/frameworks/esp-idf-master/components/soc/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/soc/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/platform_port/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3/include/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_common/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/port/soc -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/port/include/private -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/deprecated_include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include/apps -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include/apps/sntp -IC:/Espressif/frameworks/esp-idf-master/components/lwip/lwip/src/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/freertos/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include/arch -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include/sys -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/managed_components/espressif__usb_host_uac/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_gpio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_pm/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/port/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/library -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/esp_crt_bundle/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/everest/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/p256-m -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/p256-m/p256-m -IC:/Espressif/frameworks/esp-idf-master/components/esp_app_format/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_bootloader_format/include -IC:/Espressif/frameworks/esp-idf-master/components/app_update/include -IC:/Espressif/frameworks/esp-idf-master/components/bootloader_support/include -IC:/Espressif/frameworks/esp-idf-master/components/bootloader_support/bootloader_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_partition/include -IC:/Espressif/frameworks/esp-idf-master/components/efuse/include -IC:/Espressif/frameworks/esp-idf-master/components/efuse/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_mm/include -IC:/Espressif/frameworks/esp-idf-master/components/spi_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/pthread/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_timer/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_gptimer/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_ringbuf/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_uart/include -IC:/Espressif/frameworks/esp-idf-master/components/vfs/include -IC:/Espressif/frameworks/esp-idf-master/components/app_trace/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_event/include -IC:/Espressif/frameworks/esp-idf-master/components/nvs_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_pcnt/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_spi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_mcpwm/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ana_cmpr/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_i2s/include -IC:/Espressif/frameworks/esp-idf-master/components/sdmmc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdmmc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdspi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_dac/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_rmt/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_tsens/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdm/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_i2c/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ledc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_parlio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_usb_serial_jtag/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/deprecated -IC:/Espressif/frameworks/esp-idf-master/components/driver/i2c/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/touch_sensor/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/twai/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/touch_sensor/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_phy/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_phy/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_vfs_console/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_netif/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/port/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/esp_supplicant/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_coex/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/wifi_apps/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/wifi_apps/nan_app/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/include/local -IC:/Espressif/frameworks/esp-idf-master/components/unity/include -IC:/Espressif/frameworks/esp-idf-master/components/unity/unity/src -IC:/Espressif/frameworks/esp-idf-master/components/cmock/CMock/src -IC:/Espressif/frameworks/esp-idf-master/components/console -IC:/Espressif/frameworks/esp-idf-master/components/http_parser -IC:/Espressif/frameworks/esp-idf-master/components/esp-tls -IC:/Espressif/frameworks/esp-idf-master/components/esp-tls/esp-tls-crypto -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/deprecated/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_isp/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_cam/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_cam/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_jpeg/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ppa/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_eth/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_gdbstub/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hid/include -IC:/Espressif/frameworks/esp-idf-master/components/tcp_transport/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_http_client/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_http_server/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_https_ota/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_https_server/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_psram/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/rgb/include -IC:/Espressif/frameworks/esp-idf-master/components/protobuf-c/protobuf-c -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/common -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/security -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/transports -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/crypto/srp6a -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/proto-c -IC:/Espressif/frameworks/esp-idf-master/components/esp_local_ctrl/include -IC:/Espressif/frameworks/esp-idf-master/components/espcoredump/include -IC:/Espressif/frameworks/esp-idf-master/components/espcoredump/include/port/xtensa -IC:/Espressif/frameworks/esp-idf-master/components/wear_levelling/include -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/diskio -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/src -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/vfs -IC:/Espressif/frameworks/esp-idf-master/components/idf_test/include -IC:/Espressif/frameworks/esp-idf-master/components/idf_test/include/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/ieee802154/include -IC:/Espressif/frameworks/esp-idf-master/components/json/cJSON -IC:/Espressif/frameworks/esp-idf-master/components/mqtt/esp-mqtt/include -IC:/Espressif/frameworks/esp-idf-master/components/nvs_sec_provider/include -IC:/Espressif/frameworks/esp-idf-master/components/perfmon/include -IC:/Espressif/frameworks/esp-idf-master/components/rt/include -IC:/Espressif/frameworks/esp-idf-master/components/spiffs/include -IC:/Espressif/frameworks/esp-idf-master/components/touch_element/include -IC:/Espressif/frameworks/esp-idf-master/components/usb/include -IC:/Espressif/frameworks/esp-idf-master/components/wifi_provisioning/include -mlongcalls  -fno-builtin-memcpy -fno-builtin-memset -fno-builtin-bzero -fno-builtin-stpcpy -fno-builtin-strncpy -fdiagnostics-color=always -Wno-ignored-qualifiers -ffunction-sections -fdata-sections -Wall -Werror=all -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=deprecated-declarations -Wextra -Wno-error=extra -Wno-unused-parameter -Wno-sign-compare -Wno-enum-conversion -gdwarf-4 -ggdb -O2 -fmacro-prefix-map=C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver=. -fmacro-prefix-map=C:/Espressif/frameworks/esp-idf-master=/IDF -fstrict-volatile-bitfields -fno-jump-tables -fno-tree-switch-conversion -std=gnu17 -Wno-old-style-declaration -MD -MT esp-idf/main/CMakeFiles/__idf_main.dir/wifi_manager.c.obj -MF esp-idf\main\CMakeFiles\__idf_main.dir\wifi_manager.c.obj.d -o esp-idf/main/CMakeFiles/__idf_main.dir/wifi_manager.c.obj -c C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/wifi_manager.c
+In file included from C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:15,
+                 from C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/wifi_manager.c:3:
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 6 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 7 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 8 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 9 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 6 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 7 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 8 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 9 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%d' expects argument of type 'int', but argument 6 has type 'long unsigned int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%d' expects argument of type 'int', but argument 7 has type 'long unsigned int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%d' expects argument of type 'int', but argument 8 has type 'long unsigned int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%d' expects argument of type 'int', but argument 9 has type 'long unsigned int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%d' expects argument of type 'int', but argument 6 has type 'long unsigned int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%d' expects argument of type 'int', but argument 7 has type 'long unsigned int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%d' expects argument of type 'int', but argument 8 has type 'long unsigned int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%d' expects argument of type 'int', but argument 9 has type 'long unsigned int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 6 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 7 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 8 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%d' expects argument of type 'int', but argument 9 has type 'long unsigned int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+cc1.exe: some warnings being treated as errors
+[3/10] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/web_server.c.obj
+FAILED: esp-idf/main/CMakeFiles/__idf_main.dir/web_server.c.obj 
+ccache C:\Espressif\tools\xtensa-esp-elf\esp-13.2.0_20240530\xtensa-esp-elf\bin\xtensa-esp32s3-elf-gcc.exe -DESP_PLATFORM -DIDF_VER=\"v5.4-dev-1873-g41dd1a351b\" -DMBEDTLS_CONFIG_FILE=\"mbedtls/esp_config.h\" -DSOC_MMU_PAGE_SIZE=CONFIG_MMU_PAGE_SIZE -DSOC_XTAL_FREQ_MHZ=CONFIG_XTAL_FREQ -DUNITY_INCLUDE_CONFIG_H -D_GLIBCXX_HAVE_POSIX_SEMAPHORE -D_GLIBCXX_USE_POSIX_SEMAPHORE -D_GNU_SOURCE -D_POSIX_READER_WRITER_LOCKS -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/build/config -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main -IC:/Espressif/frameworks/esp-idf-master/components/newlib/platform_include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/include/freertos -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/portable/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/portable/xtensa/include/freertos -IC:/Espressif/frameworks/esp-idf-master/components/freertos/esp_additions/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include/soc -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include/soc/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/dma/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/ldo/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/debug_probe/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/port/esp32s3/. -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/port/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/heap/include -IC:/Espressif/frameworks/esp-idf-master/components/log/include -IC:/Espressif/frameworks/esp-idf-master/components/soc/include -IC:/Espressif/frameworks/esp-idf-master/components/soc/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/soc/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/platform_port/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3/include/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_common/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/port/soc -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/port/include/private -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/deprecated_include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include/apps -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include/apps/sntp -IC:/Espressif/frameworks/esp-idf-master/components/lwip/lwip/src/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/freertos/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include/arch -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include/sys -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/managed_components/espressif__usb_host_uac/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_gpio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_pm/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/port/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/library -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/esp_crt_bundle/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/everest/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/p256-m -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/p256-m/p256-m -IC:/Espressif/frameworks/esp-idf-master/components/esp_app_format/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_bootloader_format/include -IC:/Espressif/frameworks/esp-idf-master/components/app_update/include -IC:/Espressif/frameworks/esp-idf-master/components/bootloader_support/include -IC:/Espressif/frameworks/esp-idf-master/components/bootloader_support/bootloader_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_partition/include -IC:/Espressif/frameworks/esp-idf-master/components/efuse/include -IC:/Espressif/frameworks/esp-idf-master/components/efuse/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_mm/include -IC:/Espressif/frameworks/esp-idf-master/components/spi_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/pthread/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_timer/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_gptimer/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_ringbuf/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_uart/include -IC:/Espressif/frameworks/esp-idf-master/components/vfs/include -IC:/Espressif/frameworks/esp-idf-master/components/app_trace/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_event/include -IC:/Espressif/frameworks/esp-idf-master/components/nvs_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_pcnt/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_spi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_mcpwm/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ana_cmpr/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_i2s/include -IC:/Espressif/frameworks/esp-idf-master/components/sdmmc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdmmc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdspi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_dac/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_rmt/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_tsens/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdm/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_i2c/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ledc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_parlio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_usb_serial_jtag/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/deprecated -IC:/Espressif/frameworks/esp-idf-master/components/driver/i2c/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/touch_sensor/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/twai/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/touch_sensor/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_phy/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_phy/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_vfs_console/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_netif/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/port/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/esp_supplicant/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_coex/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/wifi_apps/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/wifi_apps/nan_app/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/include/local -IC:/Espressif/frameworks/esp-idf-master/components/unity/include -IC:/Espressif/frameworks/esp-idf-master/components/unity/unity/src -IC:/Espressif/frameworks/esp-idf-master/components/cmock/CMock/src -IC:/Espressif/frameworks/esp-idf-master/components/console -IC:/Espressif/frameworks/esp-idf-master/components/http_parser -IC:/Espressif/frameworks/esp-idf-master/components/esp-tls -IC:/Espressif/frameworks/esp-idf-master/components/esp-tls/esp-tls-crypto -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/deprecated/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_isp/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_cam/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_cam/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_jpeg/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ppa/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_eth/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_gdbstub/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hid/include -IC:/Espressif/frameworks/esp-idf-master/components/tcp_transport/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_http_client/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_http_server/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_https_ota/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_https_server/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_psram/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/rgb/include -IC:/Espressif/frameworks/esp-idf-master/components/protobuf-c/protobuf-c -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/common -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/security -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/transports -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/crypto/srp6a -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/proto-c -IC:/Espressif/frameworks/esp-idf-master/components/esp_local_ctrl/include -IC:/Espressif/frameworks/esp-idf-master/components/espcoredump/include -IC:/Espressif/frameworks/esp-idf-master/components/espcoredump/include/port/xtensa -IC:/Espressif/frameworks/esp-idf-master/components/wear_levelling/include -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/diskio -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/src -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/vfs -IC:/Espressif/frameworks/esp-idf-master/components/idf_test/include -IC:/Espressif/frameworks/esp-idf-master/components/idf_test/include/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/ieee802154/include -IC:/Espressif/frameworks/esp-idf-master/components/json/cJSON -IC:/Espressif/frameworks/esp-idf-master/components/mqtt/esp-mqtt/include -IC:/Espressif/frameworks/esp-idf-master/components/nvs_sec_provider/include -IC:/Espressif/frameworks/esp-idf-master/components/perfmon/include -IC:/Espressif/frameworks/esp-idf-master/components/rt/include -IC:/Espressif/frameworks/esp-idf-master/components/spiffs/include -IC:/Espressif/frameworks/esp-idf-master/components/touch_element/include -IC:/Espressif/frameworks/esp-idf-master/components/usb/include -IC:/Espressif/frameworks/esp-idf-master/components/wifi_provisioning/include -mlongcalls  -fno-builtin-memcpy -fno-builtin-memset -fno-builtin-bzero -fno-builtin-stpcpy -fno-builtin-strncpy -fdiagnostics-color=always -Wno-ignored-qualifiers -ffunction-sections -fdata-sections -Wall -Werror=all -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=deprecated-declarations -Wextra -Wno-error=extra -Wno-unused-parameter -Wno-sign-compare -Wno-enum-conversion -gdwarf-4 -ggdb -O2 -fmacro-prefix-map=C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver=. -fmacro-prefix-map=C:/Espressif/frameworks/esp-idf-master=/IDF -fstrict-volatile-bitfields -fno-jump-tables -fno-tree-switch-conversion -std=gnu17 -Wno-old-style-declaration -MD -MT esp-idf/main/CMakeFiles/__idf_main.dir/web_server.c.obj -MF esp-idf\main\CMakeFiles\__idf_main.dir\web_server.c.obj.d -o esp-idf/main/CMakeFiles/__idf_main.dir/web_server.c.obj -c C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c: In function 'start_dns_server':
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:40:24: error: storage size of 'server_addr' isn't known
+   40 |     struct sockaddr_in server_addr;
+      |                        ^~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:43:18: error: implicit declaration of function 'socket' [-Werror=implicit-function-declaration]
+   43 |     s_dns_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+      |                  ^~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:43:25: error: 'AF_INET' undeclared (first use in this function)
+   43 |     s_dns_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+      |                         ^~~~~~~
+--
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:43:34: error: 'SOCK_DGRAM' undeclared (first use in this function)
+   43 |     s_dns_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+      |                                  ^~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:43:46: error: 'IPPROTO_UDP' undeclared (first use in this function)
+   43 |     s_dns_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+      |                                              ^~~~~~~~~~~
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:45:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:45:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:45:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:45:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:45:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:52:41: error: 'INADDR_ANY' undeclared (first use in this function); did you mean 'IPADDR_ANY'?
+   52 |     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+      |                                         ^~~~~~~~~~
+--
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:55:9: error: implicit declaration of function 'bind' [-Werror=implicit-function-declaration]
+   55 |     if (bind(s_dns_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+      |         ^~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:56:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:56:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:56:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:56:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:56:9: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:87:24: error: storage size of 'client_addr' isn't known
+   87 |     struct sockaddr_in client_addr;
+      |                        ^~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:88:5: error: unknown type name 'socklen_t'; did you mean 'locale_t'?
+   88 |     socklen_t client_addr_len = sizeof(client_addr);
+      |     ^~~~~~~~~
+--
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:94:19: error: implicit declaration of function 'recvfrom' [-Werror=implicit-function-declaration]
+   94 |         int len = recvfrom(s_dns_sock, rx_buffer, sizeof(rx_buffer), 0,
+      |                   ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:98:13: note: in expansion of macro 'ESP_LOGE'
+   98 |             ESP_LOGE(TAG, "DNS recv error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:98:13: note: in expansion of macro 'ESP_LOGE'
+   98 |             ESP_LOGE(TAG, "DNS recv error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:98:13: note: in expansion of macro 'ESP_LOGE'
+   98 |             ESP_LOGE(TAG, "DNS recv error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:98:13: note: in expansion of macro 'ESP_LOGE'
+   98 |             ESP_LOGE(TAG, "DNS recv error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:98:13: note: in expansion of macro 'ESP_LOGE'
+   98 |             ESP_LOGE(TAG, "DNS recv error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:177:20: error: implicit declaration of function 'sendto' [-Werror=implicit-function-declaration]
+  177 |         int sent = sendto(s_dns_sock, tx_buffer, response_len, 0,
+      |                    ^~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:181:13: note: in expansion of macro 'ESP_LOGE'
+  181 |             ESP_LOGE(TAG, "DNS send error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:181:13: note: in expansion of macro 'ESP_LOGE'
+  181 |             ESP_LOGE(TAG, "DNS send error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:181:13: note: in expansion of macro 'ESP_LOGE'
+  181 |             ESP_LOGE(TAG, "DNS send error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:181:13: note: in expansion of macro 'ESP_LOGE'
+  181 |             ESP_LOGE(TAG, "DNS send error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:181:13: note: in expansion of macro 'ESP_LOGE'
+  181 |             ESP_LOGE(TAG, "DNS send error: %" PRIi32, errno);
+      |             ^~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/web_server.c:87:24: warning: unused variable 'client_addr' [-Wunused-variable]
+--
+cc1.exe: some warnings being treated as errors
+[4/10] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/network.c.obj
+FAILED: esp-idf/main/CMakeFiles/__idf_main.dir/network.c.obj 
+ccache C:\Espressif\tools\xtensa-esp-elf\esp-13.2.0_20240530\xtensa-esp-elf\bin\xtensa-esp32s3-elf-gcc.exe -DESP_PLATFORM -DIDF_VER=\"v5.4-dev-1873-g41dd1a351b\" -DMBEDTLS_CONFIG_FILE=\"mbedtls/esp_config.h\" -DSOC_MMU_PAGE_SIZE=CONFIG_MMU_PAGE_SIZE -DSOC_XTAL_FREQ_MHZ=CONFIG_XTAL_FREQ -DUNITY_INCLUDE_CONFIG_H -D_GLIBCXX_HAVE_POSIX_SEMAPHORE -D_GLIBCXX_USE_POSIX_SEMAPHORE -D_GNU_SOURCE -D_POSIX_READER_WRITER_LOCKS -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/build/config -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main -IC:/Espressif/frameworks/esp-idf-master/components/newlib/platform_include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/include/freertos -IC:/Espressif/frameworks/esp-idf-master/components/freertos/config/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/portable/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/freertos/FreeRTOS-Kernel/portable/xtensa/include/freertos -IC:/Espressif/frameworks/esp-idf-master/components/freertos/esp_additions/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include/soc -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/include/soc/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/dma/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/ldo/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/debug_probe/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/port/esp32s3/. -IC:/Espressif/frameworks/esp-idf-master/components/esp_hw_support/port/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/heap/include -IC:/Espressif/frameworks/esp-idf-master/components/log/include -IC:/Espressif/frameworks/esp-idf-master/components/soc/include -IC:/Espressif/frameworks/esp-idf-master/components/soc/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/soc/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/platform_port/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/hal/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3/include/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_rom/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/esp_common/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/port/soc -IC:/Espressif/frameworks/esp-idf-master/components/esp_system/port/include/private -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/include -IC:/Espressif/frameworks/esp-idf-master/components/xtensa/deprecated_include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include/apps -IC:/Espressif/frameworks/esp-idf-master/components/lwip/include/apps/sntp -IC:/Espressif/frameworks/esp-idf-master/components/lwip/lwip/src/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/freertos/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include/arch -IC:/Espressif/frameworks/esp-idf-master/components/lwip/port/esp32xx/include/sys -IC:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/managed_components/espressif__usb_host_uac/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_gpio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_pm/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/port/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/library -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/esp_crt_bundle/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/everest/include -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/p256-m -IC:/Espressif/frameworks/esp-idf-master/components/mbedtls/mbedtls/3rdparty/p256-m/p256-m -IC:/Espressif/frameworks/esp-idf-master/components/esp_app_format/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_bootloader_format/include -IC:/Espressif/frameworks/esp-idf-master/components/app_update/include -IC:/Espressif/frameworks/esp-idf-master/components/bootloader_support/include -IC:/Espressif/frameworks/esp-idf-master/components/bootloader_support/bootloader_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_partition/include -IC:/Espressif/frameworks/esp-idf-master/components/efuse/include -IC:/Espressif/frameworks/esp-idf-master/components/efuse/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_mm/include -IC:/Espressif/frameworks/esp-idf-master/components/spi_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/pthread/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_timer/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_gptimer/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_ringbuf/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_uart/include -IC:/Espressif/frameworks/esp-idf-master/components/vfs/include -IC:/Espressif/frameworks/esp-idf-master/components/app_trace/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_event/include -IC:/Espressif/frameworks/esp-idf-master/components/nvs_flash/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_pcnt/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_spi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_mcpwm/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ana_cmpr/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_i2s/include -IC:/Espressif/frameworks/esp-idf-master/components/sdmmc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdmmc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdspi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_dac/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_rmt/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_tsens/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_sdm/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_i2c/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ledc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_parlio/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_usb_serial_jtag/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/deprecated -IC:/Espressif/frameworks/esp-idf-master/components/driver/i2c/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/touch_sensor/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/twai/include -IC:/Espressif/frameworks/esp-idf-master/components/driver/touch_sensor/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_phy/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_phy/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_vfs_console/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_netif/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/port/include -IC:/Espressif/frameworks/esp-idf-master/components/wpa_supplicant/esp_supplicant/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_coex/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/wifi_apps/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/wifi_apps/nan_app/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_wifi/include/local -IC:/Espressif/frameworks/esp-idf-master/components/unity/include -IC:/Espressif/frameworks/esp-idf-master/components/unity/unity/src -IC:/Espressif/frameworks/esp-idf-master/components/cmock/CMock/src -IC:/Espressif/frameworks/esp-idf-master/components/console -IC:/Espressif/frameworks/esp-idf-master/components/http_parser -IC:/Espressif/frameworks/esp-idf-master/components/esp-tls -IC:/Espressif/frameworks/esp-idf-master/components/esp-tls/esp-tls-crypto -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/esp32s3/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_adc/deprecated/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_isp/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_cam/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_cam/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_jpeg/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_driver_ppa/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_eth/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_gdbstub/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_hid/include -IC:/Espressif/frameworks/esp-idf-master/components/tcp_transport/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_http_client/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_http_server/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_https_ota/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_https_server/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_psram/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/include -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/interface -IC:/Espressif/frameworks/esp-idf-master/components/esp_lcd/rgb/include -IC:/Espressif/frameworks/esp-idf-master/components/protobuf-c/protobuf-c -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/common -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/security -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/transports -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/include/crypto/srp6a -IC:/Espressif/frameworks/esp-idf-master/components/protocomm/proto-c -IC:/Espressif/frameworks/esp-idf-master/components/esp_local_ctrl/include -IC:/Espressif/frameworks/esp-idf-master/components/espcoredump/include -IC:/Espressif/frameworks/esp-idf-master/components/espcoredump/include/port/xtensa -IC:/Espressif/frameworks/esp-idf-master/components/wear_levelling/include -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/diskio -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/src -IC:/Espressif/frameworks/esp-idf-master/components/fatfs/vfs -IC:/Espressif/frameworks/esp-idf-master/components/idf_test/include -IC:/Espressif/frameworks/esp-idf-master/components/idf_test/include/esp32s3 -IC:/Espressif/frameworks/esp-idf-master/components/ieee802154/include -IC:/Espressif/frameworks/esp-idf-master/components/json/cJSON -IC:/Espressif/frameworks/esp-idf-master/components/mqtt/esp-mqtt/include -IC:/Espressif/frameworks/esp-idf-master/components/nvs_sec_provider/include -IC:/Espressif/frameworks/esp-idf-master/components/perfmon/include -IC:/Espressif/frameworks/esp-idf-master/components/rt/include -IC:/Espressif/frameworks/esp-idf-master/components/spiffs/include -IC:/Espressif/frameworks/esp-idf-master/components/touch_element/include -IC:/Espressif/frameworks/esp-idf-master/components/usb/include -IC:/Espressif/frameworks/esp-idf-master/components/wifi_provisioning/include -mlongcalls  -fno-builtin-memcpy -fno-builtin-memset -fno-builtin-bzero -fno-builtin-stpcpy -fno-builtin-strncpy -fdiagnostics-color=always -Wno-ignored-qualifiers -ffunction-sections -fdata-sections -Wall -Werror=all -Wno-error=unused-function -Wno-error=unused-variable -Wno-error=unused-but-set-variable -Wno-error=deprecated-declarations -Wextra -Wno-error=extra -Wno-unused-parameter -Wno-sign-compare -Wno-enum-conversion -gdwarf-4 -ggdb -O2 -fmacro-prefix-map=C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver=. -fmacro-prefix-map=C:/Espressif/frameworks/esp-idf-master=/IDF -fstrict-volatile-bitfields -fno-jump-tables -fno-tree-switch-conversion -std=gnu17 -Wno-old-style-declaration -MD -MT esp-idf/main/CMakeFiles/__idf_main.dir/network.c.obj -MF esp-idf\main\CMakeFiles\__idf_main.dir\network.c.obj.d -o esp-idf/main/CMakeFiles/__idf_main.dir/network.c.obj -c C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c
+In file included from C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:15,
+                 from C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:11:
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:64:17: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:64:17: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:64:17: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:64:17: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:64:17: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:120:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:120:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:120:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:120:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:120:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  182 |         if (level==ESP_LOG_ERROR )          { esp_log_write(ESP_LOG_ERROR,      tag, LOG_FORMAT(E, format), esp_log_timestamp(), tag, ##__VA_ARGS__); } \
+      |                                                                                      ^~~~~~~~~~
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log.h:205:38: note: in expansion of macro 'ESP_LOG_LEVEL'
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:127:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:127:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:94:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   94 | #define LOG_COLOR_D           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:127:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:95:31: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   95 | #define LOG_COLOR_V           ""
+      |                               ^~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:127:13: note: in expansion of macro 'ESP_LOGE'
+--
+C:/Espressif/frameworks/esp-idf-master/components/log/include/esp_log_color.h:43:69: error: format '%li' expects argument of type 'long int', but argument 6 has type 'int' [-Werror=format=]
+   43 | #define LOG_ANSI_COLOR(TEXT_COLOR)                                  "\033[" TEXT_COLOR "m"
+      |                                                                     ^~~~~~~
+--
+  112 | #define ESP_LOGE( tag, format, ... ) ESP_LOG_LEVEL_LOCAL(ESP_LOG_ERROR,   tag, format, ##__VA_ARGS__)
+      |                                      ^~~~~~~~~~~~~~~~~~~
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/network.c:127:13: note: in expansion of macro 'ESP_LOGE'
+--
+cc1.exe: some warnings being treated as errors
+[5/10] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/usb_audio_player_main.c.obj
+C:/Users/Nathan/Documents/GitHub/esp32-scream-receiver/main/usb_audio_player_main.c:38: warning: "DAC_CHECK_SLEEP_TIME_MS" redefined

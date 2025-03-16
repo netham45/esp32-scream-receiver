@@ -1,6 +1,7 @@
 #include "global.h"
 #include "buffer.h"
 #include "freertos/FreeRTOS.h"
+#include <inttypes.h>
 #include "freertos/task.h"
 #include "esp_log.h"
 #ifdef IS_SPDIF
@@ -16,6 +17,11 @@ bool playing = false;
 uint8_t volume = 100;
 uint8_t silence[32] = {0};
 bool is_silent = false;
+uint32_t silence_duration_ms = 0;
+TickType_t last_audio_time = 0;
+
+// Forward declaration of the sleep function we'll define in usb_audio_player_main.c
+extern void enter_silence_sleep_mode();
 
 void resume_playback() {
 #ifdef IS_USB
@@ -54,6 +60,10 @@ void stop_playback() {
 void audio_direct_write(uint8_t *data) {
 #ifdef IS_USB
   // Check if we have a valid DAC handle before writing
+  // Reset silence tracking
+  is_silent = false;
+  silence_duration_ms = 0;
+  last_audio_time = xTaskGetTickCount(); // Reset to current time
   if (spkr_handle != NULL) {
     uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
   } else {
@@ -66,38 +76,64 @@ void audio_direct_write(uint8_t *data) {
 #endif
 }
 
+// We're not checking packet contents now - silence is when no packets are received
+
 void pcm_handler(void*) {
+  // Initialize the last audio time to current time
+  last_audio_time = xTaskGetTickCount();
+  
   while (true) {
-	  if (playing) {
-		uint8_t *data = pop_chunk();
-		if (data) {
+      if (playing) {
+          uint8_t *data = pop_chunk();
+          TickType_t current_time = xTaskGetTickCount();
+          
+          if (data) {
+              if (is_silent) {
+                  is_silent = false;
+              }
+              silence_duration_ms = 0;
+              last_audio_time = xTaskGetTickCount(); // Reset to current time
+
+              
+              // Process the audio data
 #ifdef IS_USB
-			if (spkr_handle != NULL) {
-				uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
-				is_silent = false;
-			} else {
-				// DAC is not connected but we're trying to play - should enter sleep
-				// This shouldn't happen if our start/stop logic is correct
-				ESP_LOGW(TAG, "PCM handler tried to write with no DAC");
-				playing = false; // Force playback to stop
-				is_silent = true;
-			}
+              if (spkr_handle != NULL) {
+                  uac_host_device_write(spkr_handle, data, PCM_CHUNK_SIZE, portMAX_DELAY);
+              } else {
+                  // DAC is not connected but we're trying to play - should enter sleep
+                  ESP_LOGW(TAG, "PCM handler tried to write with no DAC");
+                  playing = false; // Force playback to stop
+              }
 #endif
 #ifdef IS_SPDIF
-			spdif_write(data, PCM_CHUNK_SIZE);
-			is_silent = false;
+              spdif_write(data, PCM_CHUNK_SIZE);
 #endif
-		}
-		else if (!is_silent) {
-			ESP_LOGI(TAG, "Silent");
-			is_silent = true;
-		}
-		//else
-//		    for (int i=0;i<1152/32;i++)
-	//		    uac_host_device_write(spkr_handle, silence, 32, portMAX_DELAY);
-		//	vTaskDelay(7);
-	  }
-    vTaskDelay(1);
+          } else {
+              // pop_chunk() returned NULL - NO PACKETS RECEIVED - THIS IS SILENCE!
+              if (!is_silent) {
+                  is_silent = true;
+                  last_audio_time = current_time; // Start the silence timer
+              }
+              
+              // Calculate how long we've been in silence
+              silence_duration_ms = (current_time - last_audio_time) * portTICK_PERIOD_MS;
+              
+              // Only log occasionally to avoid spamming
+              if (silence_duration_ms % 5000 == 0 && silence_duration_ms > 0) {
+                  ESP_LOGI(TAG, "Silence duration: %" PRIu32 " ms", silence_duration_ms);
+              }
+              
+              // Check if silence threshold is reached
+              if (silence_duration_ms >= SILENCE_THRESHOLD_MS) {
+                  ESP_LOGI(TAG, "Silence threshold reached (%" PRIu32 " ms), entering sleep mode", 
+                          silence_duration_ms);
+                  
+                  // Trigger sleep mode
+                  enter_silence_sleep_mode();
+              }
+          }
+      }
+      vTaskDelay(1);
   }
 }
 
