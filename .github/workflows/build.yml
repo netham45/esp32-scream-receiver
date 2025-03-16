@@ -46,8 +46,16 @@ jobs:
           # Then enable the correct target
           sed -i 's/^\/\/#define '${{ matrix.config_define }}'/#define '${{ matrix.config_define }}'/' main/config.h
           
+          # Remove existing sdkconfig files to avoid target conflicts
+          rm -f sdkconfig sdkconfig.old
+          
           # Configure project for target
           idf.py set-target ${{ matrix.target }}
+          
+          # Copy the default configuration
+          if [ -f sdkconfig.defaults ]; then
+            cp sdkconfig.defaults sdkconfig
+          fi
           
       - name: Build project
         run: idf.py build
