@@ -348,6 +348,23 @@ The ESP32 version outputs SPDIF digital audio directly through GPIO pins:
 
 ## Build and Flash Instructions
 
+### GitHub Actions CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment. The workflow automatically builds the firmware for both ESP32 (SPDIF) and ESP32-S3 (USB) targets.
+
+**Workflow Features:**
+- Builds both ESP32 and ESP32-S3 firmware variants
+- Automatically uploads build artifacts for every push and pull request
+- Creates releases with firmware packages when tags are pushed
+- Allows manual workflow runs through the GitHub Actions interface
+
+**To create a release:**
+1. Tag your commit: `git tag v1.0.0`
+2. Push the tag: `git push origin v1.0.0`
+3. GitHub Actions will build the firmware and create a release with downloadable firmware packages
+
+You can find the workflow configuration in `.github/workflows/build.yml`.
+
 ### Development Environment Setup
 
 1. Install ESP-IDF (v5.4 or newer recommended):
@@ -642,23 +659,6 @@ Sleep modes are used to conserve power:
    - For USB DAC, try disconnecting and reconnecting
    - Try a different USB cable
    - For SPDIF, check the cable connection
-   - Ensure your DAC supports 16-bit, 48kHz audio
-
-4. **Restart the System**:
-   - Power cycle the ESP32
-   - Restart the Windows PC
-   - Reset the Scream audio driver
-
-### Audio Stuttering
-
-**Symptoms**:
-- Audio playback has frequent interruptions
-- Sound cuts in and out
-- Clicking or popping noises
-
-**Possible Solutions**:
-1. **Improve WiFi Connection**:
-   - Move closer to your WiFi router
    - Reduce WiFi interference
    - Use a WiFi channel with less congestion
    - Consider adding additional access points for better coverage
