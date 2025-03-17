@@ -130,6 +130,25 @@
                         <input type="number" id="volume" name="volume" min="0" max="1" step="0.05">
                         <p class="setting-description">Audio output volume (0.0 = mute, 1.0 = full volume).</p>
                     </div>
+                    
+                    {{#IS_USB}}
+                    <h3>USB Sender Settings</h3>
+                    <div class="form-row checkbox-row">
+                        <label for="enable_usb_sender">Enable USB Sender Mode:</label>
+                        <input type="checkbox" id="enable_usb_sender" name="enable_usb_sender">
+                        <p class="setting-description">When enabled, the ESP32 acts as a USB sound card on a device such as a PC, PS5, or Switch and acts as a Scream source.</p>
+                    </div>
+                    <div class="form-row sender-option" id="sender_ip_row">
+                        <label for="sender_destination_ip">Destination IP:</label>
+                        <input type="text" id="sender_destination_ip" name="sender_destination_ip">
+                        <p class="setting-description">IP address of the Scream receiver (use 192.168.1.255 for broadcast)</p>
+                    </div>
+                    <div class="form-row sender-option" id="sender_port_row">
+                        <label for="sender_destination_port">Destination Port:</label>
+                        <input type="number" id="sender_destination_port" name="sender_destination_port" min="1" max="65535">
+                        <p class="setting-description">UDP port of the Scream receiver (default: 4010)</p>
+                    </div>
+                    {{/IS_USB}}
                 </div>
                 
                 <div class="settings-group">

@@ -412,6 +412,45 @@ static char* html_replace_placeholders(const char* template_html, size_t templat
         pos = strstr(html, "{{#IS_SPDIF}}");
     }
 #endif
+
+    // Handle IS_USB flag
+#ifdef IS_USB
+    // Add IS_USB_ENABLED flag to the template
+    pos = strstr(html, "{{#IS_USB}}");
+    while (pos) {
+        char *end_tag = strstr(pos, "{{/IS_USB}}");
+        if (end_tag) {
+            // Replace the start tag with empty string (keep content)
+            size_t start_tag_len = strlen("{{#IS_USB}}");
+            memmove(pos, pos + start_tag_len, strlen(pos + start_tag_len) + 1);
+            
+            // Find the end tag again (position changed after removing start tag)
+            end_tag = strstr(pos, "{{/IS_USB}}");
+            if (end_tag) {
+                // Replace the end tag with empty string
+                memmove(end_tag, end_tag + strlen("{{/IS_USB}}"), 
+                        strlen(end_tag + strlen("{{/IS_USB}}")) + 1);
+            }
+        }
+        pos = strstr(html, "{{#IS_USB}}");
+    }
+#else
+    // Remove IS_USB sections
+    pos = strstr(html, "{{#IS_USB}}");
+    while (pos) {
+        char *end_tag = strstr(pos, "{{/IS_USB}}");
+        if (end_tag) {
+            // Remove the entire section including tags
+            end_tag += strlen("{{/IS_USB}}");
+            memmove(pos, end_tag, strlen(end_tag) + 1);
+        } else {
+            // Incomplete tag, just remove the start tag
+            size_t start_tag_len = strlen("{{#IS_USB}}");
+            memmove(pos, pos + start_tag_len, strlen(pos + start_tag_len) + 1);
+        }
+        pos = strstr(html, "{{#IS_USB}}");
+    }
+#endif
     
     return html;
 }
@@ -901,6 +940,11 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "spdif_data_pin", config->spdif_data_pin);
 #endif
     
+    // USB Scream Sender settings
+    cJSON_AddBoolToObject(root, "enable_usb_sender", config->enable_usb_sender);
+    cJSON_AddStringToObject(root, "sender_destination_ip", config->sender_destination_ip);
+    cJSON_AddNumberToObject(root, "sender_destination_port", config->sender_destination_port);
+    
     // Sleep settings
     cJSON_AddNumberToObject(root, "silence_threshold_ms", config->silence_threshold_ms);
     cJSON_AddNumberToObject(root, "network_check_interval_ms", config->network_check_interval_ms);
@@ -1094,6 +1138,28 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     cJSON *network_inactivity_timeout_ms = cJSON_GetObjectItem(root, "network_inactivity_timeout_ms");
     if (network_inactivity_timeout_ms && cJSON_IsNumber(network_inactivity_timeout_ms)) {
         config->network_inactivity_timeout_ms = (uint32_t)network_inactivity_timeout_ms->valueint;
+    }
+    
+    // USB Sender settings
+    cJSON *enable_usb_sender = cJSON_GetObjectItem(root, "enable_usb_sender");
+    if (enable_usb_sender) {
+        if (cJSON_IsBool(enable_usb_sender)) {
+            config->enable_usb_sender = cJSON_IsTrue(enable_usb_sender);
+            ESP_LOGI(TAG, "Updating USB sender enabled to: %d", config->enable_usb_sender);
+        }
+    }
+    
+    cJSON *sender_destination_ip = cJSON_GetObjectItem(root, "sender_destination_ip");
+    if (sender_destination_ip && cJSON_IsString(sender_destination_ip)) {
+        strncpy(config->sender_destination_ip, sender_destination_ip->valuestring, 15);
+        config->sender_destination_ip[15] = '\0'; // Ensure null termination
+        ESP_LOGI(TAG, "Updating sender destination IP to: %s", config->sender_destination_ip);
+    }
+    
+    cJSON *sender_destination_port = cJSON_GetObjectItem(root, "sender_destination_port");
+    if (sender_destination_port && cJSON_IsNumber(sender_destination_port)) {
+        config->sender_destination_port = (uint16_t)sender_destination_port->valueint;
+        ESP_LOGI(TAG, "Updating sender destination port to: %d", config->sender_destination_port);
     }
     
     // SPDIF settings

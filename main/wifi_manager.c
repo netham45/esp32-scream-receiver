@@ -63,15 +63,26 @@ esp_err_t wifi_manager_init(void) {
     // Create the event group for WiFi events
     s_wifi_event_group = xEventGroupCreate();
     
-    // Initialize the TCP/IP stack
-    ESP_ERROR_CHECK(esp_netif_init());
+    // Initialize the TCP/IP stack (safely - it might be initialized already)
+    esp_err_t net_err = esp_netif_init();
+    if (net_err != ESP_OK && net_err != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(net_err);
+    }
     
-    // Create the default event loop
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    // Create the default event loop, but don't error if it already exists
+    esp_err_t loop_err = esp_event_loop_create_default();
+    if (loop_err != ESP_OK && loop_err != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(loop_err);
+    }
     
-    // Create default netif instances for both STA and AP
-    s_sta_netif = esp_netif_create_default_wifi_sta();
-    s_ap_netif = esp_netif_create_default_wifi_ap();
+    // Create default netif instances for both STA and AP - check if they already exist
+    if (s_sta_netif == NULL) {
+        s_sta_netif = esp_netif_create_default_wifi_sta();
+    }
+    
+    if (s_ap_netif == NULL) {
+        s_ap_netif = esp_netif_create_default_wifi_ap();
+    }
     
     // Initialize WiFi with default configuration
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();

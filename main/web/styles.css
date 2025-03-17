@@ -45,6 +45,13 @@ h2 {
     margin-bottom: 15px;
 }
 
+h3 {
+    color: var(--primary-color);
+    font-size: 18px;
+    margin-top: 20px;
+    margin-bottom: 10px;
+}
+
 label {
     display: block;
     margin-top: 15px;
@@ -322,6 +329,11 @@ button.secondary:hover {
 .checkbox-row .setting-description {
     width: 100%;
     margin-top: 8px;
+}
+
+/* New styles for sender options */
+.sender-option {
+    display: none;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }

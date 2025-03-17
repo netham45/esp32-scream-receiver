@@ -26,6 +26,10 @@ static app_config_t s_app_config;
 #define NVS_KEY_ACTIVITY_PACKETS "act_packets"
 #define NVS_KEY_SILENCE_AMPLT "silence_amp"
 #define NVS_KEY_NET_INACT_MS "net_inact_ms"
+// USB Scream Sender keys
+#define NVS_KEY_ENABLE_USB_SENDER "usb_sender"
+#define NVS_KEY_SENDER_DEST_IP "sender_ip"
+#define NVS_KEY_SENDER_DEST_PORT "sender_port"
 
 /**
  * Initialize with default values from config.h
@@ -49,6 +53,11 @@ static void set_default_config(void) {
     s_app_config.activity_threshold_packets = ACTIVITY_THRESHOLD_PACKETS;
     s_app_config.silence_amplitude_threshold = SILENCE_AMPLITUDE_THRESHOLD;
     s_app_config.network_inactivity_timeout_ms = NETWORK_INACTIVITY_TIMEOUT_MS;
+    
+    // USB Scream Sender defaults
+    s_app_config.enable_usb_sender = false;
+    strcpy(s_app_config.sender_destination_ip, "192.168.1.255"); // Default to broadcast
+    s_app_config.sender_destination_port = 4010; // Default Scream port
 }
 
 /**
@@ -176,6 +185,25 @@ esp_err_t config_manager_init(void) {
     err = nvs_get_u32(nvs_handle, NVS_KEY_NET_INACT_MS, &u32_value);
     if (err == ESP_OK) {
         s_app_config.network_inactivity_timeout_ms = u32_value;
+    }
+    
+    // Read USB Scream Sender settings
+    err = nvs_get_u8(nvs_handle, NVS_KEY_ENABLE_USB_SENDER, &u8_value);
+    if (err == ESP_OK) {
+        s_app_config.enable_usb_sender = (bool)u8_value;
+    }
+    
+    char ip_str[16];
+    size_t ip_len = sizeof(ip_str);
+    err = nvs_get_str(nvs_handle, NVS_KEY_SENDER_DEST_IP, ip_str, &ip_len);
+    if (err == ESP_OK) {
+        strncpy(s_app_config.sender_destination_ip, ip_str, 15);
+        s_app_config.sender_destination_ip[15] = '\0'; // Ensure null termination
+    }
+    
+    err = nvs_get_u16(nvs_handle, NVS_KEY_SENDER_DEST_PORT, &u16_value);
+    if (err == ESP_OK) {
+        s_app_config.sender_destination_port = u16_value;
     }
     
     // Close NVS handle
@@ -337,6 +365,28 @@ esp_err_t config_manager_save_config(void) {
         return err;
     }
     
+    // Save USB Scream Sender settings
+    err = nvs_set_u8(nvs_handle, NVS_KEY_ENABLE_USB_SENDER, (uint8_t)s_app_config.enable_usb_sender);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving USB sender enable: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    
+    err = nvs_set_str(nvs_handle, NVS_KEY_SENDER_DEST_IP, s_app_config.sender_destination_ip);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving sender destination IP: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    
+    err = nvs_set_u16(nvs_handle, NVS_KEY_SENDER_DEST_PORT, s_app_config.sender_destination_port);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving sender destination port: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    
     // Commit the changes
     err = nvs_commit(nvs_handle);
     if (err != ESP_OK) {
@@ -427,6 +477,16 @@ esp_err_t config_manager_save_setting(const char* key, void* value, size_t size)
     } else if (strcmp(key, NVS_KEY_NET_INACT_MS) == 0 && size == sizeof(uint32_t)) {
         s_app_config.network_inactivity_timeout_ms = *(uint32_t*)value;
         err = nvs_set_u32(nvs_handle, key, *(uint32_t*)value);
+    } else if (strcmp(key, NVS_KEY_ENABLE_USB_SENDER) == 0 && size == sizeof(bool)) {
+        s_app_config.enable_usb_sender = *(bool*)value;
+        err = nvs_set_u8(nvs_handle, key, (uint8_t)s_app_config.enable_usb_sender);
+    } else if (strcmp(key, NVS_KEY_SENDER_DEST_IP) == 0) {
+        strncpy(s_app_config.sender_destination_ip, (char*)value, 15);
+        s_app_config.sender_destination_ip[15] = '\0'; // Ensure null termination
+        err = nvs_set_str(nvs_handle, key, s_app_config.sender_destination_ip);
+    } else if (strcmp(key, NVS_KEY_SENDER_DEST_PORT) == 0 && size == sizeof(uint16_t)) {
+        s_app_config.sender_destination_port = *(uint16_t*)value;
+        err = nvs_set_u16(nvs_handle, key, s_app_config.sender_destination_port);
     } else {
         err = ESP_ERR_INVALID_ARG;
     }

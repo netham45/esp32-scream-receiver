@@ -28,6 +28,9 @@
 #include "config_manager.h"
 #include "wifi_manager.h"
 #include "web_server.h"
+#ifdef IS_USB
+#include "scream_sender.h"
+#endif
 
 #define USB_HOST_TASK_PRIORITY  5
 #define UAC_TASK_PRIORITY       5
@@ -872,53 +875,61 @@ void app_main(void)
         ESP_LOGI(TAG, "Waking from sleep (cause: %d), skipping WiFi reset window", wakeup_cause);
     }
     
+
+    // Initialize configuration manager
+    ESP_LOGI(TAG, "Initializing configuration manager");
+    ESP_ERROR_CHECK(config_manager_init());
+    app_config_t *current_config = config_manager_get_config();
+
 #ifdef IS_USB
-    // Initialize USB host first to detect DAC as early as possible
-    s_event_queue = xQueueCreate(10, sizeof(s_event_queue_t));
-    assert(s_event_queue != NULL);
-    static TaskHandle_t uac_task_handle = NULL;
-    ret = xTaskCreatePinnedToCore(uac_lib_task, "uac_events", 4096, NULL,
-                                 USER_TASK_PRIORITY, &uac_task_handle, 0);
-    assert(ret == pdTRUE);
-    ret = xTaskCreatePinnedToCore(usb_lib_task, "usb_events", 4096, (void *)uac_task_handle,
-                                USB_HOST_TASK_PRIORITY, NULL, 0);
-    assert(ret == pdTRUE);
+    // Only initialize USB host for DAC detection if sender mode is NOT enabled
+    if (!current_config->enable_usb_sender) {
+        ESP_LOGI(TAG, "USB sender mode disabled, initializing USB host for DAC detection");
+        s_event_queue = xQueueCreate(10, sizeof(s_event_queue_t));
+        assert(s_event_queue != NULL);
+        static TaskHandle_t uac_task_handle = NULL;
+        ret = xTaskCreatePinnedToCore(uac_lib_task, "uac_events", 4096, NULL,
+                                    USER_TASK_PRIORITY, &uac_task_handle, 0);
+        assert(ret == pdTRUE);
+        ret = xTaskCreatePinnedToCore(usb_lib_task, "usb_events", 4096, (void *)uac_task_handle,
+                                    USB_HOST_TASK_PRIORITY, NULL, 0);
+        assert(ret == pdTRUE);
     
-    // Give USB system enough time to detect and enumerate devices
-    ESP_LOGI(TAG, "Waiting for USB device detection...");
-    // USB enumeration can take time, need to wait for it to complete
-    for (int i = 0; i < 10; i++) {
-        vTaskDelay(pdMS_TO_TICKS(200)); // Total 2 seconds waiting time, checking every 200ms
-        
-        // Check if device was detected during the delay
-        if (s_spk_dev_handle != NULL) {
-            ESP_LOGI(TAG, "DAC detected during enumeration");
-            break;
+        // Give USB system enough time to detect and enumerate devices
+        ESP_LOGI(TAG, "Waiting for USB device detection...");
+        // USB enumeration can take time, need to wait for it to complete
+        for (int i = 0; i < 10; i++) {
+            vTaskDelay(pdMS_TO_TICKS(200)); // Total 2 seconds waiting time, checking every 200ms
+            
+            // Check if device was detected during the delay
+            if (s_spk_dev_handle != NULL) {
+                ESP_LOGI(TAG, "DAC detected during enumeration");
+                break;
+            }
+            
+            ESP_LOGI(TAG, "Waiting for DAC... %" PRIu16 "/10", i+1);
         }
         
-        ESP_LOGI(TAG, "Waiting for DAC... %" PRIu16 "/10", i+1);
-    }
-    
-    // Check if DAC is connected
-    if (s_spk_dev_handle == NULL) {
-        ESP_LOGI(TAG, "No DAC detected after waiting");
-        
-        // Only deep sleep if no DAC AND WiFi is configured
-        if (wifi_manager_has_credentials()) {
-            ESP_LOGI(TAG, "No DAC detected and WiFi is configured, going to deep sleep");
-            // Configure timer wakeup
-            esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000);
-            // Go to deep sleep immediately
-            esp_deep_sleep_start();
-            return; // Never reached
-        } else {
-            ESP_LOGI(TAG, "No DAC detected but no WiFi configured, continuing with WiFi setup");
+        // Check if DAC is connected
+        if (s_spk_dev_handle == NULL) {
+            ESP_LOGI(TAG, "No DAC detected after waiting");
+            
+            // Only deep sleep if no DAC AND WiFi is configured
+            if (wifi_manager_has_credentials()) {
+                ESP_LOGI(TAG, "No DAC detected and WiFi is configured, going to deep sleep");
+                // Configure timer wakeup
+                esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000);
+                // Go to deep sleep immediately
+                esp_deep_sleep_start();
+                return; // Never reached
+            } else {
+                ESP_LOGI(TAG, "No DAC detected but no WiFi configured, continuing with WiFi setup");
+            }
         }
+        // Only initialize the rest of the system if DAC is connected
+        ESP_LOGI(TAG, "DAC detected, initializing full system with power optimizations");
     }
 #endif
-
-    // Only initialize the rest of the system if DAC is connected
-    ESP_LOGI(TAG, "DAC detected, initializing full system with power optimizations");
     
     // Set CPU to lower frequency to save power
     #if CONFIG_PM_ENABLE
@@ -966,16 +977,66 @@ void app_main(void)
     // Suppress WiFi warnings (including "exceed max band" messages)
     esp_log_level_set("wifi", ESP_LOG_ERROR);
     
-    // Initialize configuration manager
-    ESP_LOGI(TAG, "Initializing configuration manager");
-    ESP_ERROR_CHECK(config_manager_init());
-    
     setup_buffer();
     setup_audio();
     setup_network();
     
-    // Main loop just keeps system alive - deep sleep is managed by event callbacks
+#ifdef IS_USB
+    // Initialize the USB Scream Sender if USB mode is enabled
+    app_config_t *config = config_manager_get_config();
+    if (config->enable_usb_sender) {
+        ESP_LOGI(TAG, "Initializing USB Scream Sender");
+        ESP_ERROR_CHECK(scream_sender_init());
+        ESP_ERROR_CHECK(scream_sender_start());
+        ESP_LOGI(TAG, "USB Scream Sender started, sending to %s:%d", 
+                 config->sender_destination_ip, config->sender_destination_port);
+    }
+#endif
+    
+    // Main loop - check for configuration changes that need to be applied
     while (1) {
+#ifdef IS_USB
+        static bool previous_sender_state = false;
+        static char previous_dest_ip[16] = {0};
+        static uint16_t previous_dest_port = 0;
+        
+        // Get current config
+        app_config_t *current_config = config_manager_get_config();
+        
+        // Check if USB sender state has changed
+        if (previous_sender_state != current_config->enable_usb_sender) {
+            if (current_config->enable_usb_sender) {
+                // Sender was turned on
+                ESP_LOGI(TAG, "USB Scream Sender enabled, initializing");
+                ESP_ERROR_CHECK(scream_sender_init());
+                ESP_ERROR_CHECK(scream_sender_start());
+                ESP_LOGI(TAG, "USB Scream Sender started, sending to %s:%d", 
+                        current_config->sender_destination_ip, current_config->sender_destination_port);
+            } else {
+                // Sender was turned off
+                ESP_LOGI(TAG, "USB Scream Sender disabled, stopping");
+                if (scream_sender_is_running()) {
+                    ESP_ERROR_CHECK(scream_sender_stop());
+                }
+            }
+            previous_sender_state = current_config->enable_usb_sender;
+        }
+        
+        // Check if destination has changed while sender is running
+        if (current_config->enable_usb_sender && scream_sender_is_running() &&
+            (strcmp(previous_dest_ip, current_config->sender_destination_ip) != 0 ||
+             previous_dest_port != current_config->sender_destination_port)) {
+             
+            ESP_LOGI(TAG, "USB Scream Sender destination changed to %s:%d", 
+                    current_config->sender_destination_ip, current_config->sender_destination_port);
+            ESP_ERROR_CHECK(scream_sender_update_destination());
+            
+            // Update previous values
+            strncpy(previous_dest_ip, current_config->sender_destination_ip, sizeof(previous_dest_ip) - 1);
+            previous_dest_ip[sizeof(previous_dest_ip) - 1] = '\0'; // Ensure null termination
+            previous_dest_port = current_config->sender_destination_port;
+        }
+#endif
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

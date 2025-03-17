@@ -10,7 +10,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Show initial message in network list
     document.getElementById('network-list').innerHTML = '<div style="padding: 15px; text-align: center;">Click "Scan" to search for WiFi networks</div>';
+    
+    // Add event listener to toggle visibility of sender options
+    const enableSenderCheckbox = document.getElementById('enable_usb_sender');
+    if (enableSenderCheckbox) {
+        enableSenderCheckbox.addEventListener('change', updateSenderOptionsVisibility);
+    }
 });
+
+function updateSenderOptionsVisibility() {
+    const isEnabled = document.getElementById('enable_usb_sender').checked;
+    const senderOptions = document.querySelectorAll('.sender-option');
+    
+    senderOptions.forEach(option => {
+        option.style.display = isEnabled ? 'flex' : 'none';
+    });
+}
 
 function openTab(evt, tabName) {
     // Hide all tab content
@@ -61,6 +76,16 @@ function loadSettings() {
                 document.getElementById('spdif_data_pin').value = settings.spdif_data_pin;
             }
             
+            // USB Sender settings (only if elements exist)
+            if (document.getElementById('enable_usb_sender')) {
+                document.getElementById('enable_usb_sender').checked = settings.enable_usb_sender;
+                document.getElementById('sender_destination_ip').value = settings.sender_destination_ip || '192.168.1.255';
+                document.getElementById('sender_destination_port').value = settings.sender_destination_port || 4010;
+                
+                // Update visibility of sender options
+                updateSenderOptionsVisibility();
+            }
+            
             // Sleep settings
             document.getElementById('silence_threshold_ms').value = settings.silence_threshold_ms;
             document.getElementById('network_check_interval_ms').value = settings.network_check_interval_ms;
@@ -98,6 +123,11 @@ function saveSettings(event) {
     
     // Handle checkbox values (checkboxes are only included in formData when checked)
     settings.hide_ap_when_connected = document.getElementById('hide_ap_when_connected').checked;
+    
+    // Handle USB Sender checkbox (only exists in USB mode)
+    if (document.getElementById('enable_usb_sender')) {
+        settings.enable_usb_sender = document.getElementById('enable_usb_sender').checked;
+    }
     
     fetch('/api/settings', {
         method: 'POST',

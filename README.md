@@ -1,8 +1,8 @@
 [![Build ESP32 Scream Receiver](https://github.com/netham45/esp32-scream-receiver/actions/workflows/build.yml/badge.svg)](https://github.com/netham45/esp32-scream-receiver/actions/workflows/build.yml)
 
-# ESP32 Scream Receiver
+# ESP32 Scream Audio Device
 
-A WiFi-based audio streaming receiver for the Scream protocol, implemented on ESP32/ESP32-S3 microcontrollers.
+A WiFi-based audio streaming receiver and sender for the Scream protocol, implemented on ESP32/ESP32-S3 microcontrollers.
 
 ## Table of Contents
 - [Introduction](#introduction)
@@ -15,6 +15,7 @@ A WiFi-based audio streaming receiver for the Scream protocol, implemented on ES
   - [WiFi Setup](#wifi-setup)
   - [Device Settings](#device-settings)
 - [Advanced Configuration](#advanced-configuration)
+  - [Scream Sender Configuration](#scream-sender-configuration)
   - [Network Settings](#network-settings)
   - [Buffer Settings](#buffer-settings)
   - [Audio Settings](#audio-settings)
@@ -31,7 +32,7 @@ A WiFi-based audio streaming receiver for the Scream protocol, implemented on ES
 
 ## Introduction
 
-The ESP32 Scream Receiver is an implementation of a network audio receiver for the [Scream](https://github.com/duncanthrax/scream) virtual audio driver. It allows you to wirelessly stream audio from a Windows PC running the Scream audio driver to an ESP32 or ESP32-S3 connected to a USB DAC or SPDIF device.
+The ESP32 Scream Receiver is an implementation of a network audio receiver and sender for the [Scream](https://github.com/duncanthrax/scream) virtual audio driver. It allows you to wirelessly stream audio from a Windows PC running the Scream audio driver to an ESP32 or ESP32-S3 connected to a USB DAC or SPDIF device. With the Scream Sender feature, it can also capture audio as a USB audio device and transmit it to other Scream receivers on your network.
 
 ### What is Scream?
 
@@ -43,7 +44,9 @@ This receiver is fully compatible with [ScreamRouter](https://github.com/netham4
 
 ## Features
 
-- **Wireless Audio Streaming**: Receive audio from any Windows PC running Scream over WiFi
+- **Wireless Audio Streaming**: 
+  - Receive audio from any Windows PC running Scream over WiFi
+  - Send audio from connected USB audio devices to other Scream receivers (NEW)
 - **Multiple Hardware Options**:
   - ESP32-S3: Support for USB Audio Class 1.0 devices (DACs)
   - ESP32: Support for SPDIF digital audio output
@@ -196,6 +199,31 @@ The Device Settings tab provides configuration options for:
 - Network Inactivity Timeout: Time without packets before entering sleep
 
 ## Advanced Configuration
+
+### Scream Sender Configuration
+
+The ESP32 Scream Receiver now includes a sender feature, allowing it to capture audio from connected USB audio devices and transmit it over the network to other Scream receivers.
+
+#### Overview
+
+- **Audio Capture**: Captures audio from USB audio input devices connected to the ESP32-S3
+- **Network Streaming**: Streams captured audio in Scream protocol format
+- **Flexible Routing**: Send audio to any Scream receiver on your network
+- **Dynamic Control**: Start/stop streaming, control volume, and mute/unmute on demand
+- **Configuration**: Set destination IP address and port through the web interface
+
+#### Setup and Usage
+
+1. **Connect a USB audio input device**: Attach a microphone or audio interface to the ESP32-S3's USB port
+2. **Configure destination**: Set the target IP address and port in the web interface
+3. **Start streaming**: Use the controls to begin sending audio
+
+#### Sender Settings
+
+- **Destination IP**: The IP address of the receiving device
+- **Destination Port**: The UDP port the receiver is listening on (typically 4010)
+- **Mute Control**: Toggle to mute/unmute the audio stream
+- **Volume**: Adjust the volume level (0-100)
 
 ### Network Settings
 

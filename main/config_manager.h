@@ -35,6 +35,11 @@ typedef struct {
     uint8_t activity_threshold_packets;
     uint16_t silence_amplitude_threshold;
     uint32_t network_inactivity_timeout_ms;
+    
+    // USB Scream Sender configuration
+    bool enable_usb_sender;                // Enable USB Scream Sender functionality
+    char sender_destination_ip[16];        // Destination IP for audio packets
+    uint16_t sender_destination_port;      // Destination port for audio packets
 } app_config_t;
 
 // Initialize configuration (load from NVS or use defaults)

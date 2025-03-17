@@ -6,7 +6,7 @@ set(WEB_FILES
     "${WEB_SRC_DIR}/script.js"
 )
 
-idf_component_register(SRCS "web_server.c" "wifi_manager.c" "audio.c" "buffer.c" "network.c" "usb_audio_player_main.c" "spdif.c" "config_manager.c"
+idf_component_register(SRCS "web_server.c" "wifi_manager.c" "audio.c" "buffer.c" "network.c" "usb_audio_player_main.c" "spdif.c" "config_manager.c" "scream_sender.c"
                     INCLUDE_DIRS "."
                     EMBED_FILES ${WEB_FILES})
 
