@@ -4,9 +4,6 @@
 
 A WiFi-based audio streaming receiver for the Scream protocol, implemented on ESP32/ESP32-S3 microcontrollers.
 
-
-* Note: This documentation is AI-generated and has not been vetted for accuracy.
-
 ## Table of Contents
 - [Introduction](#introduction)
 - [Features](#features)
@@ -31,27 +28,6 @@ A WiFi-based audio streaming receiver for the Scream protocol, implemented on ES
   - [Configuration Options](#configuration-options)
   - [Building the Project](#building-the-project)
   - [Flashing Instructions](#flashing-instructions)
-- [Architecture](#architecture)
-  - [System Architecture](#system-architecture)
-  - [Main Components](#main-components)
-  - [Audio Pipeline](#audio-pipeline)
-  - [WiFi Management](#wifi-management)
-  - [Power Management](#power-management)
-- [Technical Details](#technical-details)
-  - [Scream Protocol Implementation](#scream-protocol-implementation)
-  - [USB Audio Implementation](#usb-audio-implementation)
-  - [SPDIF Implementation](#spdif-implementation)
-  - [WiFi Roaming](#wifi-roaming)
-  - [Sleep Modes](#sleep-modes)
-- [Troubleshooting](#troubleshooting)
-  - [No Audio Output](#no-audio-output)
-  - [Audio Stuttering](#audio-stuttering)
-  - [WiFi Connection Issues](#wifi-connection-issues)
-  - [Device Not Responding](#device-not-responding)
-  - [USB DAC Not Detected](#usb-dac-not-detected)
-- [FAQ](#faq)
-- [Contributing](#contributing)
-- [License](#license)
 
 ## Introduction
 
@@ -60,6 +36,10 @@ The ESP32 Scream Receiver is an implementation of a network audio receiver for t
 ### What is Scream?
 
 Scream is an open-source virtual audio driver for Windows that captures system audio and sends it over the network. It acts as a virtual sound card that transmits audio over UDP or TCP to receivers on the local network. This project implements a receiver compatible with the Scream protocol on the ESP32 platform.
+
+### Compatibility with ScreamRouter
+
+This receiver is fully compatible with [ScreamRouter](https://github.com/netham45/screamrouter), an advanced audio routing and management system that supports Scream and RTP audio sources. ScreamRouter allows for more complex audio setups with features like routing, mixing, equalization, and group control of multiple audio endpoints.
 
 ## Features
 
@@ -357,7 +337,7 @@ The ESP32 can also output digital audio through an optical TOSLINK connection us
                    ↑
                    │
                2 Vcc     EVERLIGHT
-ESP32-WROOM-32    │       PLT133/T10W etc.
+                   │       PLT133/T10W etc.
                 Toslink    ┌───────┐
                 connector  │       │
                    │       │       │
@@ -371,7 +351,7 @@ ESP32-WROOM-32    │       PLT133/T10W etc.
 ```
 
 **Connections**:
-1. Connect GPIO27 of the ESP32 to pin 1 (Vin) of the TOSLINK connector
+1. Connect GPIO23 of the ESP32 to pin 1 (Vin) of the TOSLINK connector
 2. Connect pin 2 (Vcc) of the TOSLINK connector to +3.3V
 3. Connect pin 3 (GND) of the TOSLINK connector to ground
 4. Use a standard TOSLINK optical transmitter like EVERLIGHT PLT133/T10W or compatible models
@@ -386,20 +366,7 @@ ESP32-WROOM-32    │       PLT133/T10W etc.
 
 ### GitHub Actions CI/CD
 
-This project uses GitHub Actions for continuous integration and deployment. The workflow automatically builds the firmware for both ESP32 (SPDIF) and ESP32-S3 (USB) targets.
-
-**Workflow Features:**
-- Builds both ESP32 and ESP32-S3 firmware variants
-- Automatically uploads build artifacts for every push and pull request
-- Creates releases with firmware packages when tags are pushed
-- Allows manual workflow runs through the GitHub Actions interface
-
-**To create a release:**
-1. Tag your commit: `git tag v1.0.0`
-2. Push the tag: `git push origin v1.0.0`
-3. GitHub Actions will build the firmware and create a release with downloadable firmware packages
-
-You can find the workflow configuration in `.github/workflows/build.yml`.
+This project uses GitHub Actions for continuous integration and deployment. The workflow automatically builds the firmware for both ESP32 (SPDIF), ESP32-S3 (SPDIF), and ESP32-S3 (USB) targets. They are uploaded as releases after every commit to the main branch.
 
 ### Development Environment Setup
 
@@ -423,16 +390,7 @@ cd esp32-scream-receiver
 
 ### Configuration Options
 
-Configure the project for your specific needs:
-
-```bash
-idf.py menuconfig
-```
-
-Key configuration areas:
-- Component config → USB Host HAC Driver (for ESP32-S3)
-- Component config → ESP WIFI Configuration
-- Component config → Power Management
+Use one of the pre-made sdkconfigs as a basis for your configuration.
 
 ### Building the Project
 
@@ -468,161 +426,6 @@ For monitoring the device logs:
 idf.py -p PORT monitor
 ```
 
-## Architecture
-
-### System Architecture
-
-The ESP32 Scream Receiver has a multi-component architecture designed for real-time audio processing with efficient power management.
-
-```
-┌─────────────────┐          ┌─────────────────┐          ┌─────────────────┐
-│  WiFi Manager   │◄────────►│  Network Stack  │────────► │  Buffer Manager │
-└─────────────────┘          └─────────────────┘          └─────────────────┘
-        ▲                                                         │
-        │                                                         ▼
-┌─────────────────┐                                      ┌─────────────────┐
-│   Web Server    │                                      │Audio Processing │
-└─────────────────┘                                      └─────────────────┘
-                                                                 │
-┌─────────────────┐                                              ▼
-│Power Management │◄────────────────────────────────────►┌─────────────────┐
-└─────────────────┘                                      │ USB/SPDIF Driver│
-                                                         └─────────────────┘
-```
-
-### Main Components
-
-1. **WiFi Manager**: Handles all aspects of WiFi connectivity:
-   - Network scanning and connection
-   - Access point mode for configuration
-   - Credential storage
-   - Roaming support
-   - Signal strength monitoring
-
-2. **Network Stack**: Manages audio data reception:
-   - UDP socket listener (primary)
-   - TCP fallback support
-   - Scream protocol handling (header parsing)
-   - Network activity monitoring
-   - QoS configuration
-
-3. **Buffer Manager**: Controls audio data flow:
-   - Configurable ring buffer
-   - Dynamic buffer size adjustment
-   - Underrun/overrun prevention
-   - Playback stability management
-
-4. **Audio Processing**: Processes incoming audio:
-   - PCM data handling
-   - Volume control
-   - Audio output preparation
-
-5. **USB/SPDIF Driver**: Handles the physical audio output:
-   - USB Audio Class driver (ESP32-S3)
-   - SPDIF output via GPIO (ESP32)
-   - Device enumeration and configuration
-   - Audio stream parameters
-
-6. **Power Management**: Optimizes power usage:
-   - Sleep mode control
-   - CPU frequency scaling
-   - WiFi power save modes
-   - Wake condition monitoring
-
-7. **Web Server**: Provides user interface:
-   - WiFi configuration
-   - Device settings
-   - Status information
-   - Captive portal functionality
-
-### Audio Pipeline
-
-The audio data flows through several stages from network reception to output:
-
-```
-Network Packets → Header Parsing → Audio Buffer → [ESP32-S3] → USB Audio Class Driver → USB DAC
-                                              → [ESP32]   → SPDIF Output → SPDIF Receiver
-```
-
-1. **Network Reception**: UDP/TCP packets containing Scream audio data are received
-2. **Header Parsing**: The 5-byte Scream header is parsed and validated
-3. **Buffer Management**: Audio data is either:
-   - Buffered for stability (when buffer is filling)
-   - Passed directly to output (during normal playback)
-4. **Output Processing**: Data is sent to either:
-   - USB Audio driver (ESP32-S3)
-   - SPDIF output pins (ESP32)
-5. **Physical Output**: Audio is played through the connected DAC
-
-### WiFi Management
-
-The WiFi manager implements a state machine design:
-
-```
-                  ┌─────────────────┐
-                  │Not Initialized  │
-                  └────────┬────────┘
-                           │
-                           ▼
-┌─────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   AP Mode   │◄────│    Connecting   │────►│    Connected    │
-└──────┬──────┘     └─────────────────┘     └─────────────────┘
-       │                      ▲                      │
-       │                      │                      │
-       └──────────────────────┴──────────────────────┘
-```
-
-- **State Transitions**:
-  - **Not Initialized** → **Connecting**: When WiFi manager starts
-  - **Connecting** → **Connected**: When successfully connected to WiFi
-  - **Connecting** → **AP Mode**: When connection fails or no credentials
-  - **Connected** → **Connecting**: When connection is lost
-  - **AP Mode** → **Connecting**: When new credentials are provided
-
-### Power Management
-
-The system implements multiple power states:
-
-1. **Normal Operation**:
-   - Full CPU performance
-   - WiFi in standard mode
-   - Audio processing active
-   - USB/SPDIF output active
-
-2. **Light Sleep Mode**:
-   - CPU in light sleep between operations
-   - WiFi in power save mode
-   - USB device detached but ready
-   - Network monitoring active
-   - Wakes on audio packet detection
-
-3. **Deep Sleep Mode** (when no DAC connected):
-   - Most systems powered down
-   - Wake timer active
-   - Periodically wakes to check for DAC
-   - Minimal power consumption
-
-## Technical Details
-
-### Scream Protocol Implementation
-
-The Scream protocol is relatively simple:
-
-- **Packet Format**:
-  - 5-byte header with audio stream information
-  - Raw PCM audio data (16-bit samples, interleaved stereo)
-  
-- **Audio Format**:
-  - 16-bit signed PCM
-  - Little-endian byte order
-  - 48kHz sample rate (configurable)
-  - Stereo channel configuration
-
-- **Network Transport**:
-  - Primary: UDP (lower latency)
-  - Fallback: TCP (more reliable)
-  - Port: 4010 (configurable)
-
 ### USB Audio Implementation
 
 The ESP32-S3 version uses the ESP-IDF USB Host stack:
@@ -636,7 +439,6 @@ The ESP32-S3 version uses the ESP-IDF USB Host stack:
 **Limitations**:
 - Only supports USB Audio Class 1.0 (not 2.0)
 - Limited to 16-bit audio
-- Fixed 48kHz sample rate
 
 ### SPDIF Implementation
 
@@ -646,16 +448,6 @@ The ESP32 version generates SPDIF output directly:
 - **Protocol Handling**: Implements SPDIF frame structure and timing
 - **Hardware Timing**: Uses ESP32 hardware timers for precise bit timing
 - **Compatible Receivers**: Standard SPDIF inputs on DACs, receivers, etc.
-
-### WiFi Roaming
-
-The device implements advanced WiFi roaming features:
-
-- **802.11k Support**: Neighbor report requests to identify nearby APs
-- **802.11v Support**: BSS transition management for smooth handovers
-- **802.11r Support**: Fast BSS transition (if supported by your network)
-- **RSSI Monitoring**: Triggers roaming when signal strength drops
-- **Seamless Handover**: Maintains audio streaming during transitions
 
 ### Sleep Modes
 
@@ -670,151 +462,3 @@ Sleep modes are used to conserve power:
   - Enters deep sleep when no DAC is connected
   - Periodically wakes to check for DAC
   - Significantly reduces power consumption when not in use
-
-## Troubleshooting
-
-### No Audio Output
-
-**Symptoms**:
-- DAC is connected but no sound is playing
-- No LED activity on DAC
-- Windows shows audio playing
-
-**Possible Solutions**:
-1. **Check WiFi Connection**:
-   - Ensure the ESP32 is connected to the same network as the PC
-   - Check router settings for potential blocks on UDP traffic
-   - Try moving the ESP32 closer to your WiFi router
-
-2. **Verify Scream Configuration**:
-   - Check that Scream is set as the default audio device
-   - Ensure Scream is configured for network output
-   - Verify Scream is using the same port as configured on the ESP32
-
-3. **Check DAC Connection**:
-   - For USB DAC, try disconnecting and reconnecting
-   - Try a different USB cable
-   - For SPDIF, check the cable connection
-   - Reduce WiFi interference
-   - Use a WiFi channel with less congestion
-   - Consider adding additional access points for better coverage
-
-2. **Adjust Buffer Settings**:
-   - Increase Initial Buffer Size (e.g., from 4 to 8)
-   - Enable Buffer Grow Step Size (set to 1 or 2)
-   - Increase Max Buffer Size
-   - These changes will increase latency but improve stability
-
-3. **Check for Network Congestion**:
-   - Limit other high-bandwidth activities on your network
-   - Ensure QoS settings on your router prioritize audio traffic
-   - Try switching from 2.4GHz to 5GHz WiFi if available
-
-4. **USB Power Issues**:
-   - For USB DACs, try using a powered USB hub
-   - Ensure the ESP32 has sufficient power
-
-### WiFi Connection Issues
-
-**Symptoms**:
-- Device won't connect to WiFi
-- Frequent disconnections
-- Web interface shows "Not Connected"
-
-**Possible Solutions**:
-1. **Reset WiFi Configuration**:
-   - Hold GPIO 0 or 1 during boot for 3 seconds
-   - Reconnect to the "ESP32-Scream" access point
-   - Reconfigure WiFi credentials
-
-2. **Check WiFi Signal Strength**:
-   - Move the device closer to your access point
-   - Reduce interference from other devices
-   - Check if your WiFi network is visible
-
-3. **WiFi Authentication**:
-   - Ensure your password is correct
-   - Check if your network uses special authentication methods
-   - Try creating a guest network with simpler security
-
-4. **Router Settings**:
-   - Check if MAC filtering is enabled
-   - Ensure 2.4GHz network is enabled (ESP32 doesn't support 5GHz-only)
-   - Try disabling AP isolation or client isolation features
-
-### Device Not Responding
-
-**Symptoms**:
-- Cannot access web interface
-- LED indicators show unexpected patterns
-- No response to power cycling
-
-**Possible Solutions**:
-1. **Factory Reset**:
-   - Hold GPIO 0 or 1 during boot for 3 seconds
-   - This will reset all settings to defaults
-
-2. **Check Power Supply**:
-   - Ensure stable 5V power with sufficient current
-   - Try a different USB cable or power supply
-   - Look for overheating issues
-
-3. **Flash Recovery**:
-   - If available, connect to the serial console
-   - Reflash the firmware
-   - Use recovery mode if the device is bootlooping
-
-4. **Hardware Issues**:
-   - Check for physical damage
-   - Look for loose connections
-   - Inspect for signs of water damage or overheating
-
-### USB DAC Not Detected
-
-**Symptoms**:
-- ESP32-S3 boots but DAC is not recognized
-- No LED indicators on the DAC
-- Serial monitor shows "No DAC detected"
-
-**Possible Solutions**:
-1. **Check Compatibility**:
-   - Verify your DAC is USB Audio Class 1.0 compatible
-   - Some DACs require specific initialization
-   - Class 2.0 only DACs will not work
-
-2. **Power Requirements**:
-   - Some DACs require more power than the ESP32-S3 can provide
-   - Try using a powered USB hub
-   - Check for power indicators on your DAC
-
-3. **Connection Issues**:
-   - Try a different USB cable
-   - Ensure the cable supports data (not just power)
-   - Check for loose connections
-
-4. **Driver Mode**:
-   - Some DACs have switches for different modes
-   - Ensure the DAC is in class-compliant mode, not driver mode
-
-## FAQ
-
-**Q: Which USB DACs are compatible?**  
-A: Most USB Audio Class 1.0 devices are compatible. This includes many popular entry to mid-range USB DACs. USB Audio Class 2.0 devices (like those supporting 24/32-bit or sample rates above 96kHz) are not supported unless they can fall back to Class 1.0 mode.
-
-**Q: How do I update the firmware?**  
-A: Connect the ESP32/ESP32-S3 to your computer, download the latest source code, and flash it using the ESP-IDF tools:
-```
-idf.py -p PORT flash
-```
-
-**Q: Can I use this with multiple computers?**  
-A: Yes, the receiver will play audio from any computer running Scream on the same network. However, it will only play audio from one source at a time without conflict. To mix sources see ScreamRouter.
-
-**Q: What is the range of the WiFi connection?**  
-A: The range depends on your WiFi network coverage. The ESP32 Scream Receiver supports WiFi roaming, so you can extend coverage by using multiple access points with the same SSID throughout your home or office.
-
-**Q: Is there any audio quality loss compared to wired solutions?**  
-A: The audio is transmitted digitally, so there is no inherent quality loss in the transmission itself. The 16-bit, 48kHz limitation is the main quality constraint, but this is equivalent to CD quality and sufficient for most audio applications.
-
-**Q: Why ESP32 instead of other platforms?**  
-A: The ESP32 offers an excellent combination of WiFi capabilities, processing power, and specialized hardware features (USB OTG on ESP32-S3, hardware timers for SPDIF) in a low-cost, power-efficient package.
