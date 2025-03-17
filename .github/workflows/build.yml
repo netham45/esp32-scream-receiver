@@ -14,11 +14,11 @@ jobs:
       matrix:
         target: [esp32, esp32s3, esp32s3_spdif]
         include:
-          - target: esp32
+          - target: esp32_spdif
             board: esp32
             name: "ESP32 (SPDIF)"
             config_define: IS_SPDIF
-          - target: esp32s3
+          - target: esp32s3_usb
             board: esp32s3
             name: "ESP32-S3 (USB)"
             config_define: IS_USB
