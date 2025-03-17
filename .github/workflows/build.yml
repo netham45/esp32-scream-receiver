@@ -71,22 +71,35 @@ jobs:
           
   create-release:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code for commit info
+        uses: actions/checkout@v4
+
+      - name: Get short commit hash
+        id: commit
+        run: echo "short_hash=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         
       - name: Create release zip files
         run: |
-          zip -r esp32-firmware.zip firmware-esp32/
-          zip -r esp32-s3-firmware.zip firmware-esp32s3/
+          # Create zip files with commit hash in the name
+          zip -r esp32-spdif-${{ steps.commit.outputs.short_hash }}.zip firmware-esp32_spdif/
+          zip -r esp32s3-usb-${{ steps.commit.outputs.short_hash }}.zip firmware-esp32s3_usb/
+          zip -r esp32s3-spdif-${{ steps.commit.outputs.short_hash }}.zip firmware-esp32s3_spdif/
       
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: ncipollo/release-action@v1
         with:
-          files: |
-            esp32-firmware.zip
-            esp32-s3-firmware.zip
+          tag: build-${{ steps.commit.outputs.short_hash }}
+          name: Build ${{ steps.commit.outputs.short_hash }}
+          artifacts: |
+            esp32-spdif-${{ steps.commit.outputs.short_hash }}.zip
+            esp32s3-usb-${{ steps.commit.outputs.short_hash }}.zip
+            esp32s3-spdif-${{ steps.commit.outputs.short_hash }}.zip
           draft: false
           prerelease: false
+          generateReleaseNotes: true
+          skipIfReleaseExists: true
