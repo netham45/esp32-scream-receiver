@@ -35,6 +35,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Initialize submodules
+        run: |
+          git submodule init
+          git submodule update
       
       - name: Setup Python
         uses: actions/setup-python@v4

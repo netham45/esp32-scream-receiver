@@ -30,7 +30,7 @@ It uses WiFi to transmit high-quality, low-latency audio throughout your network
 - User-friendly web configuration interface
 - Smart WiFi management with roaming support
 - Power-saving sleep modes when inactive
-- Automatic wake-on-audio functionality
+- Automatic wake-on-audio functionality   
 
 ### ScreamRouter Compatibility
 This device is fully compatible with [ScreamRouter](https://github.com/netham45/screamrouter), an advanced audio routing and management system that supports both Scream and RTP audio sources. ScreamRouter enables:
