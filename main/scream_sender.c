@@ -1,3 +1,5 @@
+#include <config.h>
+#ifdef IS_USB
 #include "scream_sender.h"
 #include "config_manager.h"
 #include "esp_log.h"
@@ -211,3 +213,4 @@ esp_err_t scream_sender_update_destination(void)
     
     return ESP_OK;
 }
+#endif
