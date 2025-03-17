@@ -130,6 +130,11 @@
                         <input type="number" id="volume" name="volume" min="0" max="1" step="0.05">
                         <p class="setting-description">Audio output volume (0.0 = mute, 1.0 = full volume).</p>
                     </div>
+                    <div class="form-row checkbox-row">
+                        <label for="use_direct_write">Use Direct Write Mode:</label>
+                        <input type="checkbox" id="use_direct_write" name="use_direct_write">
+                        <p class="setting-description">When enabled, audio data bypasses the buffer system for lower latency but potentially less stable playback.</p>
+                    </div>
                     
                     {{#IS_USB}}
                     <h3>USB Sender Settings</h3>

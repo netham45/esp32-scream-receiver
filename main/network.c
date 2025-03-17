@@ -91,8 +91,13 @@ void tcp_handler(void *) {
 	}
 	
 	if (datahead >= PACKET_SIZE) {
-		//push_chunk(data + HEADER_SIZE);
-		audio_direct_write(data + HEADER_SIZE);
+	    // Use direct write or buffered mode based on configuration
+	    if (config->use_direct_write) {
+		    audio_direct_write(data + HEADER_SIZE);
+	    } else {
+		    //push_chunk(data + HEADER_SIZE);
+            audio_direct_write(data + HEADER_SIZE);
+	    }
 		memcpy(data, data + PACKET_SIZE, PACKET_SIZE);
 		datahead -= PACKET_SIZE;
 	}
@@ -166,8 +171,13 @@ void udp_handler(void *) {
 			}
 		 	datahead += result;
 			if (datahead >= PACKET_SIZE) {
-				//push_chunk(data + HEADER_SIZE);
-				audio_direct_write(data + HEADER_SIZE);
+			    // Use direct write or buffered mode based on configuration
+			    if (config->use_direct_write) {
+				    audio_direct_write(data + HEADER_SIZE);
+			    } else {
+				    //push_chunk(data + HEADER_SIZE);
+                    audio_direct_write(data + HEADER_SIZE);
+			    }
 				memcpy(data,data + PACKET_SIZE, PACKET_SIZE);
 				datahead -= PACKET_SIZE;
 			}

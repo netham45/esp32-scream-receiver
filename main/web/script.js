@@ -70,6 +70,7 @@ function loadSettings() {
             document.getElementById('sample_rate').value = settings.sample_rate;
             document.getElementById('bit_depth').value = settings.bit_depth;
             document.getElementById('volume').value = settings.volume;
+            document.getElementById('use_direct_write').checked = settings.use_direct_write;
             
             // SPDIF settings (only if element exists)
             if (document.getElementById('spdif_data_pin') && settings.spdif_data_pin !== undefined) {
@@ -123,6 +124,7 @@ function saveSettings(event) {
     
     // Handle checkbox values (checkboxes are only included in formData when checked)
     settings.hide_ap_when_connected = document.getElementById('hide_ap_when_connected').checked;
+    settings.use_direct_write = document.getElementById('use_direct_write').checked;
     
     // Handle USB Sender checkbox (only exists in USB mode)
     if (document.getElementById('enable_usb_sender')) {

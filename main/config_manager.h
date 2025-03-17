@@ -40,6 +40,9 @@ typedef struct {
     bool enable_usb_sender;                // Enable USB Scream Sender functionality
     char sender_destination_ip[16];        // Destination IP for audio packets
     uint16_t sender_destination_port;      // Destination port for audio packets
+    
+    // Audio processing configuration
+    bool use_direct_write;                 // Use direct write instead of buffering
 } app_config_t;
 
 // Initialize configuration (load from NVS or use defaults)

@@ -3,6 +3,8 @@
     "files.associations": {
         "git_diff": "cpp",
         "global.h": "c",
-        "config.h": "c"
+        "config.h": "c",
+        "scream_sender.h": "c",
+        "inttypes.h": "c"
     }
 }

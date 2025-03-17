@@ -10,9 +10,10 @@ dependencies:
       type: service
     version: 0.2.0
   espressif/usb_host_uac:
-    component_hash: 6bcac5e817b87e6d089574f2280d35eef2e761e387b667909c158238358d2a14
+    component_hash: null
     source:
-      type: service
+      path: C:\Users\Nathan\Documents\GitHub\esp32-scream-receiver\components\espressif__usb_host_uac
+      type: local
     version: 1.0.0
   idf:
     component_hash: null
@@ -24,6 +25,6 @@ dependencies:
     source:
       type: service
     version: 0.16.0~6
-manifest_hash: 5754c510c86239bc86a23d11ad1d1e98b837a80b663417a16fec597ca90b0ed7
+manifest_hash: 89dd28ecb68132bbc20aabcf5a309876f266665dddafa4b08a5c7be53a7841ac
 target: esp32s3
 version: 1.0.0

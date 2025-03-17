@@ -1,0 +1,3 @@
+[submodule "espressif__usb_host_uac"]
+	path = components/espressif__usb_host_uac
+	url = https://github.com/netham45/esp32s3_usb_host_uac_apple

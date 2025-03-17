@@ -82,8 +82,6 @@ void audio_direct_write(uint8_t *data) {
 #endif
 }
 
-// We're not checking packet contents now - silence is when no packets are received
-
 void pcm_handler(void*) {
   // Initialize the last audio time to current time
   last_audio_time = xTaskGetTickCount();
