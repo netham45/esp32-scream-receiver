@@ -7,12 +7,14 @@
 */
 #include <stdint.h>
 #include <sys/types.h>
+#include "esp_err.h"
 
 /*
  * initialize S/PDIF driver
  *   rate: sampling rate, 44100Hz, 48000Hz etc.
+ *   returns ESP_OK on success, or error code on failure
  */ 
-void spdif_init(int rate);
+esp_err_t spdif_init(int rate);
 
 /*
  * send PCM data to S/PDIF transmitter
@@ -24,5 +26,6 @@ void spdif_write(const void *src, size_t size);
 /*
  * change sampling rate
  *   rate: sampling rate, 44100Hz, 48000Hz etc.
+ *   returns ESP_OK on success, or error code on failure
  */ 
-void spdif_set_sample_rates(int rate);
+esp_err_t spdif_set_sample_rates(int rate);

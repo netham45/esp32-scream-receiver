@@ -573,6 +573,11 @@ extern void enter_deep_sleep_mode(void);
 extern uac_host_device_handle_t s_spk_dev_handle; // DAC handle from usb_audio_player_main.c
 #endif
 
+#ifdef IS_SPDIF
+// Add external declaration for SPDIF functions
+extern esp_err_t spdif_set_sample_rates(int rate);
+#endif
+
 /**
  * POST handler for connecting to a WiFi network
  */
@@ -1037,9 +1042,17 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     }
     
     // Audio settings
+    bool sample_rate_changed = false;
+    uint32_t old_sample_rate = config->sample_rate;
+    
     cJSON *sample_rate = cJSON_GetObjectItem(root, "sample_rate");
     if (sample_rate && cJSON_IsNumber(sample_rate)) {
-        config->sample_rate = (uint32_t)sample_rate->valueint;
+        uint32_t new_rate = (uint32_t)sample_rate->valueint;
+        if (new_rate != config->sample_rate) {
+            config->sample_rate = new_rate;
+            sample_rate_changed = true;
+            ESP_LOGI(TAG, "Sample rate changed from %" PRIu32 " to %" PRIu32, old_sample_rate, new_rate);
+        }
     }
     
     cJSON *bit_depth = cJSON_GetObjectItem(root, "bit_depth");
@@ -1085,12 +1098,19 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     
     // SPDIF settings
 #ifdef IS_SPDIF
+    bool spdif_pin_changed = false;
+    uint8_t old_spdif_pin = config->spdif_data_pin;
+    
     cJSON *spdif_data_pin = cJSON_GetObjectItem(root, "spdif_data_pin");
     if (spdif_data_pin && cJSON_IsNumber(spdif_data_pin)) {
         // Limit the pin number to valid GPIO range (0-39 for ESP32)
         uint8_t pin = (uint8_t)spdif_data_pin->valueint;
         if (pin <= 39) {
-            config->spdif_data_pin = pin;
+            if (pin != config->spdif_data_pin) {
+                spdif_pin_changed = true;
+                config->spdif_data_pin = pin;
+                ESP_LOGI(TAG, "SPDIF pin changed from %d to %d", old_spdif_pin, pin);
+            }
         }
     }
 #endif
@@ -1104,6 +1124,23 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save configuration");
         return ESP_FAIL;
     }
+    
+    // Apply SPDIF changes if needed
+#ifdef IS_SPDIF
+    if (spdif_pin_changed || sample_rate_changed) {
+        ESP_LOGI(TAG, "SPDIF configuration changed, reinitializing SPDIF with pin %d and sample rate %" PRIu32,
+                config->spdif_data_pin, config->sample_rate);
+        
+        // Reinitialize SPDIF with the new settings
+        esp_err_t spdif_err = spdif_set_sample_rates(config->sample_rate);
+        if (spdif_err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to reinitialize SPDIF: %s", esp_err_to_name(spdif_err));
+            // Continue anyway - the user can retry or use different settings later
+        } else {
+            ESP_LOGI(TAG, "Successfully reinitialized SPDIF");
+        }
+    }
+#endif
     
     // Apply volume changes immediately if volume was changed
     if (volume_changed) {

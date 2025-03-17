@@ -148,8 +148,15 @@ void setup_audio() {
 #ifdef IS_SPDIF
   // Get configuration for sample rate
   app_config_t *config = config_manager_get_config();
-  spdif_init(config->sample_rate);
-  ESP_LOGI(TAG, "Initialized SPDIF with sample rate: %" PRIu32, config->sample_rate);
+  esp_err_t err = spdif_init(config->sample_rate);
+  if (err == ESP_OK) {
+    ESP_LOGI(TAG, "Initialized SPDIF with pin %d and sample rate: %" PRIu32, config->spdif_data_pin, config->sample_rate);
+  } else {
+    ESP_LOGE(TAG, "Failed to initialize SPDIF with pin %d and sample rate %" PRIu32 ": %s", 
+             config->spdif_data_pin, config->sample_rate, esp_err_to_name(err));
+    ESP_LOGW(TAG, "Audio output will not be available. Please check the SPDIF pin configuration in the web UI.");
+    // Continue running - we won't have audio output but the web UI will still work
+  }
 #endif
   xTaskCreatePinnedToCore(pcm_handler, "pcm_handler", 16384, NULL, 1, NULL, 1);
 }

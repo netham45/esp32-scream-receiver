@@ -175,34 +175,7 @@ esp_err_t wifi_manager_start(void) {
         ESP_ERROR_CHECK(wifi_manager_init());
     }
     
-    // Check if we have stored credentials
-    if (wifi_manager_has_credentials()) {
-        ESP_LOGI(TAG, "Found stored WiFi credentials, trying to connect");
-        
-        // Read stored credentials
-        char ssid[WIFI_SSID_MAX_LENGTH + 1] = {0};
-        char password[WIFI_PASSWORD_MAX_LENGTH + 1] = {0};
-        
-        nvs_handle_t nvs_handle;
-        ESP_ERROR_CHECK(nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle));
-        
-        size_t required_size = sizeof(ssid);
-        ESP_ERROR_CHECK(nvs_get_str(nvs_handle, WIFI_NVS_KEY_SSID, ssid, &required_size));
-        
-        required_size = sizeof(password);
-        ESP_ERROR_CHECK(nvs_get_str(nvs_handle, WIFI_NVS_KEY_PASSWORD, password, &required_size));
-        
-        nvs_close(nvs_handle);
-        
-    // Configure WiFi station with the stored credentials
-    wifi_config_t wifi_sta_config = {0};
-    
-    strncpy((char*)wifi_sta_config.sta.ssid, ssid, sizeof(wifi_sta_config.sta.ssid));
-    strncpy((char*)wifi_sta_config.sta.password, password, sizeof(wifi_sta_config.sta.password));
-    
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
-    
-    // Get AP password from config manager
+    // Get AP configuration from config manager
     app_config_t* config = config_manager_get_config();
     const char* ap_password = config->ap_password;
     
@@ -227,11 +200,38 @@ esp_err_t wifi_manager_start(void) {
     }
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_ap_config));
     
-    // Use APSTA mode to have both interfaces active
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    
-    // Start WiFi
-    ESP_ERROR_CHECK(esp_wifi_start());
+    // Check if we have stored credentials
+    if (wifi_manager_has_credentials()) {
+        ESP_LOGI(TAG, "Found stored WiFi credentials, trying to connect");
+        
+        // Read stored credentials
+        char ssid[WIFI_SSID_MAX_LENGTH + 1] = {0};
+        char password[WIFI_PASSWORD_MAX_LENGTH + 1] = {0};
+        
+        nvs_handle_t nvs_handle;
+        ESP_ERROR_CHECK(nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle));
+        
+        size_t required_size = sizeof(ssid);
+        ESP_ERROR_CHECK(nvs_get_str(nvs_handle, WIFI_NVS_KEY_SSID, ssid, &required_size));
+        
+        required_size = sizeof(password);
+        ESP_ERROR_CHECK(nvs_get_str(nvs_handle, WIFI_NVS_KEY_PASSWORD, password, &required_size));
+        
+        nvs_close(nvs_handle);
+        
+        // Configure WiFi station with the stored credentials
+        wifi_config_t wifi_sta_config = {0};
+        
+        strncpy((char*)wifi_sta_config.sta.ssid, ssid, sizeof(wifi_sta_config.sta.ssid));
+        strncpy((char*)wifi_sta_config.sta.password, password, sizeof(wifi_sta_config.sta.password));
+        
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
+        
+        // Use APSTA mode to have both interfaces active
+        ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+        
+        // Start WiFi
+        ESP_ERROR_CHECK(esp_wifi_start());
         
         // Wait for connection with timeout
         EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,

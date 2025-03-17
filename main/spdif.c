@@ -7,8 +7,13 @@
 */
 #include "freertos/FreeRTOS.h"
 #include "driver/i2s.h"
+#include "esp_log.h"
+#include "esp_err.h"
 
 #include "config_manager.h"
+#include "config.h"
+
+#define TAG "spdif"
 
 // Get SPDIF pin from config
 static uint8_t get_spdif_pin(void)
@@ -93,8 +98,10 @@ static void spdif_buf_init(void)
 }
 
 // initialize I2S for S/PDIF transmission
-void spdif_init(int rate)
+// Returns ESP_OK on success, or an error code on failure
+esp_err_t spdif_init(int rate)
 {
+    esp_err_t err;
     int sample_rate = rate * BMC_BITS_FACTOR;
     int bclk = sample_rate * I2S_BITS_PER_SAMPLE * I2S_CHANNELS;
     int mclk = (I2S_BUG_MAGIC / bclk) * bclk; // use mclk for avoiding I2S bug
@@ -118,12 +125,26 @@ void spdif_init(int rate)
         .data_in_num = -1,
     };
 
-    ESP_ERROR_CHECK(i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL));
-    ESP_ERROR_CHECK(i2s_set_pin(I2S_NUM, &pin_config));
+    err = i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to install I2S driver: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = i2s_set_pin(I2S_NUM, &pin_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set I2S pins (data_out_num=%d): %s", 
+                 pin_config.data_out_num, esp_err_to_name(err));
+        // Uninstall driver to clean up
+        i2s_driver_uninstall(I2S_NUM);
+        return err;
+    }
 
     // initialize S/PDIF buffer
     spdif_buf_init();
     spdif_ptr = spdif_buf;
+    
+    return ESP_OK;
 }
 
 // write audio data to I2S buffer
@@ -153,9 +174,10 @@ void spdif_write(const void *src, size_t size)
 }
 
 // change S/PDIF sample rate
-void spdif_set_sample_rates(int rate)
+// Returns ESP_OK on success, or an error code on failure
+esp_err_t spdif_set_sample_rates(int rate)
 {
     // uninstall and reinstall I2S driver for avoiding I2S bug
     i2s_driver_uninstall(I2S_NUM);
-    spdif_init(rate);
+    return spdif_init(rate);
 }

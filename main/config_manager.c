@@ -43,7 +43,7 @@ static void set_default_config(void) {
     s_app_config.sample_rate = SAMPLE_RATE;
     s_app_config.bit_depth = BIT_DEPTH;
     s_app_config.volume = VOLUME;
-    s_app_config.spdif_data_pin = 23; // Default SPDIF pin
+    s_app_config.spdif_data_pin = 16; // Default SPDIF pin for ESP32-S3
     s_app_config.silence_threshold_ms = SILENCE_THRESHOLD_MS;
     s_app_config.network_check_interval_ms = NETWORK_CHECK_INTERVAL_MS;
     s_app_config.activity_threshold_packets = ACTIVITY_THRESHOLD_PACKETS;
@@ -141,6 +141,13 @@ esp_err_t config_manager_init(void) {
     err = nvs_get_u32(nvs_handle, NVS_KEY_VOLUME, &volume_int);
     if (err == ESP_OK) {
         s_app_config.volume = (float)volume_int / 100.0f;
+    }
+    
+    // Read SPDIF data pin
+    err = nvs_get_u8(nvs_handle, NVS_KEY_SPDIF_DATA_PIN, &u8_value);
+    if (err == ESP_OK) {
+        s_app_config.spdif_data_pin = u8_value;
+        ESP_LOGI(TAG, "Loaded SPDIF data pin: %d", s_app_config.spdif_data_pin);
     }
     
     // Read sleep settings
@@ -285,6 +292,15 @@ esp_err_t config_manager_save_config(void) {
         return err;
     }
     
+    // Save SPDIF data pin
+    err = nvs_set_u8(nvs_handle, NVS_KEY_SPDIF_DATA_PIN, s_app_config.spdif_data_pin);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving SPDIF data pin: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    ESP_LOGI(TAG, "Saved SPDIF data pin: %d", s_app_config.spdif_data_pin);
+    
     // Save sleep settings
     err = nvs_set_u32(nvs_handle, NVS_KEY_SILENCE_THRES_MS, s_app_config.silence_threshold_ms);
     if (err != ESP_OK) {
@@ -392,6 +408,10 @@ esp_err_t config_manager_save_setting(const char* key, void* value, size_t size)
         s_app_config.volume = *(float*)value;
         uint32_t volume_int = (uint32_t)(s_app_config.volume * 100.0f);
         err = nvs_set_u32(nvs_handle, key, volume_int);
+    } else if (strcmp(key, NVS_KEY_SPDIF_DATA_PIN) == 0 && size == sizeof(uint8_t)) {
+        s_app_config.spdif_data_pin = *(uint8_t*)value;
+        err = nvs_set_u8(nvs_handle, key, s_app_config.spdif_data_pin);
+        ESP_LOGI(TAG, "Saving SPDIF data pin value: %d", s_app_config.spdif_data_pin);
     } else if (strcmp(key, NVS_KEY_SILENCE_THRES_MS) == 0 && size == sizeof(uint32_t)) {
         s_app_config.silence_threshold_ms = *(uint32_t*)value;
         err = nvs_set_u32(nvs_handle, key, *(uint32_t*)value);
