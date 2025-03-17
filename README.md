@@ -1,492 +1,119 @@
-[![Build ESP32 Scream Receiver](https://github.com/netham45/esp32-scream-receiver/actions/workflows/build.yml/badge.svg)](https://github.com/netham45/esp32-scream-receiver/actions/workflows/build.yml)
-
 # ESP32 Scream Audio Device
 
-A WiFi-based audio streaming receiver and sender for the Scream protocol, implemented on ESP32/ESP32-S3 microcontrollers.
-
-## Table of Contents
-- [Introduction](#introduction)
-- [Features](#features)
-- [Hardware Requirements](#hardware-requirements)
-- [Getting Started](#getting-started)
-  - [Setting Up the Receiver](#setting-up-the-receiver)
-  - [Setting Up the Scream Driver on Windows](#setting-up-the-scream-driver-on-windows)
-- [Web Configuration Interface](#web-configuration-interface)
-  - [WiFi Setup](#wifi-setup)
-  - [Device Settings](#device-settings)
-- [Advanced Configuration](#advanced-configuration)
-  - [Scream Sender Configuration](#scream-sender-configuration)
-  - [Network Settings](#network-settings)
-  - [Buffer Settings](#buffer-settings)
-  - [Audio Settings](#audio-settings)
-  - [Sleep Settings](#sleep-settings)
-- [Hardware Setup](#hardware-setup)
-  - [ESP32-S3 with USB DAC](#esp32-s3-with-usb-dac)
-  - [ESP32 with SPDIF](#esp32-with-spdif)
-- [Build and Flash Instructions](#build-and-flash-instructions)
-  - [Development Environment Setup](#development-environment-setup)
-  - [Obtaining the Source Code](#obtaining-the-source-code)
-  - [Configuration Options](#configuration-options)
-  - [Building the Project](#building-the-project)
-  - [Flashing Instructions](#flashing-instructions)
-
-## Introduction
-
-The ESP32 Scream Receiver is an implementation of a network audio receiver and sender for the [Scream](https://github.com/duncanthrax/scream) virtual audio driver. It allows you to wirelessly stream audio from a Windows PC running the Scream audio driver to an ESP32 or ESP32-S3 connected to a USB DAC or SPDIF device. With the Scream Sender feature, it can also capture audio as a USB audio device and transmit it to other Scream receivers on your network.
-
-### What is Scream?
-
-Scream is an open-source virtual audio driver for Windows that captures system audio and sends it over the network. It acts as a virtual sound card that transmits audio over UDP or TCP to receivers on the local network. This project implements a receiver compatible with the Scream protocol on the ESP32 platform.
-
-### Compatibility with ScreamRouter
-
-This receiver is fully compatible with [ScreamRouter](https://github.com/netham45/screamrouter), an advanced audio routing and management system that supports Scream and RTP audio sources. ScreamRouter allows for more complex audio setups with features like routing, mixing, equalization, and group control of multiple audio endpoints.
-
-## Features
-
-- **Wireless Audio Streaming**: 
-  - Receive audio from any Windows PC running Scream over WiFi
-  - Send audio from connected USB audio devices to other Scream receivers (NEW)
-- **Multiple Hardware Options**:
-  - ESP32-S3: Support for USB Audio Class 1.0 devices (DACs)
-  - ESP32: Support for SPDIF digital audio output
-- **Easy Setup**:
-  - Automatic captive portal for initial configuration
-  - Web-based configuration interface
-  - No app required - just a web browser
-- **Smart WiFi Management**:
-  - Automatic connection to strongest known network
-  - WiFi roaming with 802.11k/v/r support for seamless transition between access points
-  - Maintains connections when moving around your home/office
-- **Efficient Power Management**:
-  - Deep sleep mode when no DAC is connected (minimal power consumption when not in use)
-  - Automatic wake on network activity (instant resumption when audio starts)
-- **Audio Optimization**:
-  - Dynamic buffer management to balance between latency and playback stability
-  - Automatic buffer growth during network congestion
-  - Low-latency direct streaming mode
-- **Remote Configuration**:
-  - Always-accessible web interface
-  - Easy network switching without needing to reset
-  - Real-time configuration of audio and buffer parameters
-
-## Hardware Requirements
-
-### Compatible Hardware
-
-#### ESP32-S3 (For USB Audio Output)
-- ESP32-S3 development board (ESP32-S3-DevKitC recommended)
-- USB OTG support for connecting to USB DACs
-- Minimum 4MB flash and 2MB PSRAM recommended
-
-#### ESP32 (For SPDIF Output)
-- Standard ESP32 development board
-- GPIO pins available for SPDIF digital output
-- Minimum 4MB flash recommended
-
-### Audio Output Devices
-
-#### For ESP32-S3
-- USB Audio Class 1.0 compatible DAC
-- Tested with various USB DACs supporting 16-bit, 48kHz audio
-- Note: USB Audio Class 2.0 devices are not supported
-
-#### For ESP32
-- SPDIF receiver/DAC
-- Connections to appropriate GPIO pins (defined in configuration)
-
-### Power Supply Considerations
-
-- 5V power supply with at least 500mA capacity
-- Clean power source recommended for audio applications
-- USB power from computer or quality phone charger is typically sufficient
-- Optional battery operation possible with appropriate voltage regulation
-
-## Getting Started
-
-### Setting Up the Receiver
-
-1. **Power on the ESP32/ESP32-S3**:
-   - Connect your ESP32 or ESP32-S3 board to power
-   - For ESP32-S3, connect your USB DAC to the USB OTG port
-   - For ESP32, connect your SPDIF DAC to the configured GPIO pin
-
-2. **First-Time Configuration**:
-   - On first boot, the device will create a WiFi access point named "ESP32-Scream"
-   - Connect to this WiFi network using your smartphone, tablet, or computer
-   - A captive portal should automatically open (if not, navigate to http://192.168.4.1)
-   - Select your home WiFi network from the list and enter the password
-   - The device will connect to your network and restart
-
-3. **Verify Connection**:
-   - After connecting to your WiFi, the device's web interface can be accessed by:
-     - Finding the device's IP address from your router
-     - Using network discovery (if your system supports it)
-     - Reconnecting to the "ESP32-Scream" access point (which remains active for configuration)
-
-4. **Factory Reset** (if needed):
-   - Hold down GPIO pin 0 or 1 for 3 seconds during startup
-   - This will clear all WiFi credentials and reset to factory defaults
-   - The device will restart and create the "ESP32-Scream" access point
-
-### Setting Up the Scream Driver on Windows
-
-1. **Install Scream Driver**:
-   - Download the latest release from [Scream's GitHub page](https://github.com/duncanthrax/scream/releases)
-   - Run the installer and follow the instructions
-   - Reboot your computer if required
-
-2. **Configure Scream**:
-   - Open Windows Sound settings
-   - Set "Scream" as your default output device
-   - Right-click on the Scream device, select "Properties"
-   - In the Advanced tab, ensure 16-bit, 48kHz is selected (this is the format supported by the ESP32)
-
-3. **Testing the Connection**:
-   - Play audio on your Windows PC
-   - The ESP32 Scream Receiver should automatically receive and play the audio
-   - The first few seconds might be choppy as the buffer fills and stabilizes
-
-## Web Configuration Interface
-
-The ESP32 Scream Receiver includes a web-based configuration interface accessible via any browser. This interface allows you to configure WiFi, audio, and system settings.
-
-![Web UI WiFi Setup](images/settings.png)
-*The ESP32 Scream Receiver web interface - WiFi setup tab*
-
-### WiFi Setup
-
-The WiFi setup tab allows you to:
-
-- View currently connected WiFi network
-- Scan for available networks
-- Connect to a new WiFi network
-- Reset all WiFi credentials
-
-To connect to a new network:
-1. Click "Scan Networks" to see all available WiFi networks
-2. Select a network from the list or enter the SSID manually
-3. Enter the password (if required)
-4. Click "Connect"
-
-### Device Settings
-
-The Device Settings tab provides configuration options for:
-
-![Web UI Settings](images/settings_2.png)
-*The ESP32 Scream Receiver web interface - Device settings tab*
-
-#### Network Settings
-- UDP Port: Port used for receiving Scream audio (default: 4010)
-- AP SSID: Name of the access point in setup mode
-- AP Password: Optional password for the setup access point
-- Hide AP when connected: Option to only show the AP when not connected to WiFi
-
-#### Buffer Settings
-- Initial Buffer Size: Number of audio chunks to buffer before playback
-- Buffer Grow Step Size: How much to increase buffer after an underrun
-- Max Buffer Size: Maximum allowed buffer size
-- Max Grow Size: Maximum target size for dynamic buffer growth
-
-#### Audio Settings
-- Sample Rate: Audio sample rate in Hz (typically 48000)
-- Bit Depth: Audio bit depth (fixed at 16-bit)
-- Volume: Output volume control (0.0 to 1.0)
-
-#### Sleep Settings
-- Network Check Interval: How often to check for network activity during sleep
-- Activity Threshold Packets: Number of packets needed to wake from sleep
-- Network Inactivity Timeout: Time without packets before entering sleep
-
-## Advanced Configuration
-
-### Scream Sender Configuration
-
-The ESP32 Scream Receiver now includes a sender feature, allowing it to capture audio from connected USB audio devices and transmit it over the network to other Scream receivers.
-
-#### Overview
-
-- **Audio Capture**: Captures audio from USB audio input devices connected to the ESP32-S3
-- **Network Streaming**: Streams captured audio in Scream protocol format
-- **Flexible Routing**: Send audio to any Scream receiver on your network
-- **Dynamic Control**: Start/stop streaming, control volume, and mute/unmute on demand
-- **Configuration**: Set destination IP address and port through the web interface
-
-#### Setup and Usage
-
-1. **Connect a USB audio input device**: Attach a microphone or audio interface to the ESP32-S3's USB port
-2. **Configure destination**: Set the target IP address and port in the web interface
-3. **Start streaming**: Use the controls to begin sending audio
-
-#### Sender Settings
-
-- **Destination IP**: The IP address of the receiving device
-- **Destination Port**: The UDP port the receiver is listening on (typically 4010)
-- **Mute Control**: Toggle to mute/unmute the audio stream
-- **Volume**: Adjust the volume level (0-100)
-
-### Network Settings
-
-The default network settings are suitable for most users, but you may need to adjust them for specific network environments:
-
-- **UDP Port (default: 4010)**: Change this if you have port conflicts or need to use a specific port for network rules. Remember to use the same port in your Scream sender configuration.
-
-- **AP Mode**: The device creates an access point named "ESP32-Scream" by default. You can customize the name and add a password for security. When "Hide AP when connected" is enabled, the access point is only visible when the device is not connected to WiFi.
-
-### Buffer Settings
-
-Buffer settings affect the balance between audio latency and playback stability:
-
-- **Initial Buffer Size (default: 4)**: Higher values create more latency but improve stability. Lower values reduce latency but may cause stuttering.
-
-- **Buffer Grow Step Size (default: 0)**: When set above 0, the buffer will automatically grow by this amount each time an underrun occurs. This helps adapt to network conditions.
-
-- **Max Buffer Size (default: 16)**: The maximum size the buffer can reach. Packets are dropped if the buffer fills beyond this point.
-
-- **Max Grow Size (default: 4)**: The maximum size the buffer will target when automatically growing. Limits automatic buffer growth.
-
-Recommended settings for different scenarios:
-
-| Scenario | Initial Buffer | Buffer Grow | Max Buffer | Max Grow |
-|----------|---------------|-------------|------------|----------|
-| Low Latency | 2 | 0 | 8 | 4 |
-| Balanced | 4 | 1 | 16 | 8 |
-| Stability | 8 | 2 | 32 | 16 |
-
-### Audio Settings
-
-Audio format settings must match those set in the Scream Windows driver:
-
-- **Sample Rate (default: 48000 Hz)**: Must match the Scream driver setting.
-
-- **Bit Depth (fixed at 16-bit)**: The ESP32 implementation only supports 16-bit audio.
-
-- **Volume (default: 1.0)**: Adjusts the output volume from 0.0 (mute) to 1.0 (full volume).
-
-### Sleep Settings
-
-Sleep settings control power management behavior:
-
-- **Network Check Interval (default: 1000 ms)**: How often the device checks for network activity while in sleep mode.
-
-- **Activity Threshold Packets (default: 2)**: Number of packets that must be detected to wake the device from sleep mode.
-
-- **Network Inactivity Timeout (default: 5000 ms)**: Time without network packets before maintaining sleep mode.
-
-## Hardware Setup
-
-### ESP32-S3 with USB DAC
-
-The ESP32-S3 version uses the USB OTG port to connect to a USB Audio Class 1.0 DAC:
-
-```
-┌────────────────┐      ┌────────────────┐      ┌────────────────┐
-│                │      │                │      │                │
-│   Windows PC   │──────│  WiFi Router   │──────│   ESP32-S3     │
-│  (with Scream) │      │                │      │                │
-│                │      │                │      │                │
-└────────────────┘      └────────────────┘      └───────┬────────┘
-                                                        │
-                                                        │ USB
-                                                        │
-                                                ┌───────┴────────┐
-                                                │                │
-                                                │    USB DAC     │
-                                                │                │
-                                                └───────┬────────┘
-                                                        │
-                                                        │ Audio
-                                                        │
-                                                ┌───────┴────────┐
-                                                │                │
-                                                │   Speakers     │
-                                                │                │
-                                                └────────────────┘
-```
-
-**Connections**:
-1. Power the ESP32-S3 via its USB port or 5V power pins
-2. Connect your USB DAC to the ESP32-S3's USB OTG port
-3. Connect speakers or headphones to your USB DAC
-
-**Compatible DACs**:
-- Most USB Audio Class 1.0 DACs (supporting 16-bit, 48kHz)
-- Tested with FiiO, AudioQuest, and various generic USB DACs
-- USB audio interfaces that support class-compliant mode
-
-**Note**: Some DACs may need a powered USB hub if they require more power than the ESP32-S3 can provide.
-
-### ESP32 with SPDIF
-
-The ESP32 version outputs SPDIF digital audio directly through GPIO pins:
-
-```
-┌────────────────┐      ┌────────────────┐      ┌────────────────┐
-│                │      │                │      │                │
-│   Windows PC   │──────│  WiFi Router   │──────│     ESP32      │
-│  (with Scream) │      │                │      │                │
-│                │      │                │      │                │
-└────────────────┘      └────────────────┘      └───────┬────────┘
-                                                        │
-                                                        │ SPDIF (GPIO)
-                                                        │
-                                                ┌───────┴────────┐
-                                                │                │
-                                                │   SPDIF DAC    │
-                                                │                │
-                                                └───────┬────────┘
-                                                        │
-                                                        │ Audio
-                                                        │
-                                                ┌───────┴────────┐
-                                                │                │
-                                                │   Speakers     │
-                                                │                │
-                                                └────────────────┘
-```
-
-**Connections**:
-1. Power the ESP32 via its USB port or 5V power pins
-2. Connect the ESP32's SPDIF output GPIO pin to your SPDIF DAC's input
-3. Connect speakers or headphones to your SPDIF DAC
-
-**SPDIF Connection Guidelines**:
-- Use short, high-quality digital coaxial cable
-- Ensure proper impedance matching (75 ohm)
-- Add a small series resistor (100-220 ohm) between the GPIO pin and the cable
-- For best results, use a proper S/PDIF transformer
-
-### ESP32 with Optical TOSLINK
-
-The ESP32 can also output digital audio through an optical TOSLINK connection using a simple circuit:
-
-```
-                 +3.3V
-                   ↑
-                   │
-               2 Vcc     EVERLIGHT
-                   │       PLT133/T10W etc.
-                Toslink    ┌───────┐
-                connector  │       │
-                   │       │       │
-    GPIO27 ────────1 Vin   │       │
-                   │       │       │
-                   │       └───────┘
-                3 GND
-                   │
-                   ↓
-                  GND
-```
-
-**Connections**:
-1. Connect GPIO23 of the ESP32 to pin 1 (Vin) of the TOSLINK connector
-2. Connect pin 2 (Vcc) of the TOSLINK connector to +3.3V
-3. Connect pin 3 (GND) of the TOSLINK connector to ground
-4. Use a standard TOSLINK optical transmitter like EVERLIGHT PLT133/T10W or compatible models
-
-**TOSLINK Connection Notes**:
-- No additional components required between the ESP32 and TOSLINK transmitter
-- The GPIO pin directly drives the optical transmitter
-- This provides complete electrical isolation between the ESP32 and your audio equipment
-- Compatible with any standard TOSLINK optical input on DACs, receivers, amplifiers, etc.
-
-## Build and Flash Instructions
-
-### GitHub Actions CI/CD
-
-This project uses GitHub Actions for continuous integration and deployment. The workflow automatically builds the firmware for both ESP32 (SPDIF), ESP32-S3 (SPDIF), and ESP32-S3 (USB) targets. They are uploaded as releases after every commit to the main branch.
-
-### Development Environment Setup
-
-1. Install ESP-IDF (v5.4 or newer recommended):
-   - Follow the [official installation guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/get-started/index.html)
-   - Ensure you have the correct target set:
-     - For ESP32: `idf.py set-target esp32`
-     - For ESP32-S3: `idf.py set-target esp32s3`
-
-2. Required dependencies:
-   - Python 3.6 or newer
-   - Git
-   - Make, CMake, Ninja
-
-### Obtaining the Source Code
-
-```bash
-git clone https://github.com/netham45/esp32-scream-receiver.git
-cd esp32-scream-receiver
-```
-
-### Configuration Options
-
-Use one of the pre-made sdkconfigs as a basis for your configuration.
-
-### Building the Project
-
-#### For ESP32-S3 (USB Audio)
-
-```bash
-# Make sure USB audio is enabled
-# Edit main/config.h and ensure IS_USB is defined and IS_SPDIF is commented out
-idf.py build
-```
-
-#### For ESP32 (SPDIF)
-
-```bash
-# Make sure SPDIF is enabled
-# Edit main/config.h and ensure IS_SPDIF is defined and IS_USB is commented out
-idf.py build
-```
-
-### Flashing Instructions
-
-Connect your ESP32/ESP32-S3 to your computer via USB, then:
-
-```bash
-idf.py -p PORT flash
-```
-
-Replace `PORT` with your device's serial port (e.g., COM3 on Windows, /dev/ttyUSB0 on Linux).
-
-For monitoring the device logs:
-
-```bash
-idf.py -p PORT monitor
-```
-
-### USB Audio Implementation
-
-The ESP32-S3 version uses the ESP-IDF USB Host stack:
-
-- **USB Audio Class 1.0** support
-- **Device Detection**: Automatically detects and enumerates USB Audio Class devices
-- **Stream Configuration**: 16-bit, 48kHz stereo PCM audio
-- **Isochronous Transfers**: For continuous audio data flow
-- **Volume Control**: Via the USB Audio Class interface
-
-**Limitations**:
-- Only supports USB Audio Class 1.0 (not 2.0)
-- Limited to 16-bit audio
-
-### SPDIF Implementation
-
-The ESP32 version generates SPDIF output directly:
-
-- **Digital Output**: Uses GPIO pins for SPDIF output
-- **Protocol Handling**: Implements SPDIF frame structure and timing
-- **Hardware Timing**: Uses ESP32 hardware timers for precise bit timing
-- **Compatible Receivers**: Standard SPDIF inputs on DACs, receivers, etc.
-
-### Sleep Modes
-
-Sleep modes are used to conserve power:
-  
-- **Network Activity Detection**:
-  - Periodically checks for Scream packets during sleep
-  - Wakes on detection of configured packet threshold
-  - Returns to sleep if no sustained activity
-  
-- **DAC Disconnection**:
-  - Enters deep sleep when no DAC is connected
-  - Periodically wakes to check for DAC
-  - Significantly reduces power consumption when not in use
+A wireless audio streaming solution for ESP32 microcontrollers that works with the Scream virtual audio driver protocol.
+
+## Description
+
+This project turns an ESP32 or ESP32-S3 microcontroller into a versatile audio streaming device. It can function as both:
+
+- A **receiver** that plays audio streamed from Windows PCs running the Scream virtual audio driver
+- A **sender** that captures audio from USB devices and transmits it to other Scream receivers
+
+It uses WiFi to transmit high-quality, low-latency audio throughout your network, effectively creating wireless audio links between devices.
+
+## Capabilities
+
+### Receiver Mode
+- Receives audio wirelessly from any Windows PC running the Scream audio driver
+- Outputs to USB DAC (ESP32-S3) or SPDIF (ESP32/ESP32-S3)
+- Supports 16-bit, 48kHz audio
+- Dynamic buffer management for balancing latency and stability
+- Volume control through web interface
+
+### Sender Mode (ESP32-S3 only)
+- Acts as a USB sound card and captures audio from hosts (computers, game consoles, phones)
+- Transmits audio wirelessly to any Scream-compatible receiver
+- Configurable destination IP and port
+- Volume and mute controls via web interface
+
+### System Features
+- User-friendly web configuration interface
+- Smart WiFi management with roaming support
+- Power-saving sleep modes when inactive
+- Automatic wake-on-audio functionality
+
+### ScreamRouter Compatibility
+This device is fully compatible with [ScreamRouter](https://github.com/netham45/screamrouter), an advanced audio routing and management system that supports both Scream and RTP audio sources. ScreamRouter enables:
+
+- Complex whole-house audio setups
+- Audio routing between multiple sources and receivers
+- Group control of multiple audio endpoints
+- Equalization and audio processing
+- Time-shifting and audio buffering
+- Web-based MP3 streaming for browser listening
+- Home Assistant integration
+
+## Installation
+
+### Hardware Requirements
+
+#### For Receiver Mode:
+- ESP32-S3 with USB DAC *or* ESP32/ESP32-S3 with SPDIF DAC
+- 5V power supply
+- WiFi network
+
+#### For Sender Mode:
+- ESP32-S3 development board
+- USB audio input device
+- WiFi network
+
+### Firmware Installation
+
+**Option 1: Pre-built Firmware**
+1. Download the firmware that matches your hardware:
+   - `firmware-esp32s3-usb.bin` (ESP32-S3 with USB audio)
+   - `firmware-esp32s3-spdif.bin` (ESP32-S3 with SPDIF)
+   - `firmware-esp32-spdif.bin` (ESP32 with SPDIF)
+
+2. Flash using esptool:
+   ```
+   esptool.py -p (PORT) write_flash 0x0 firmware-xxx.bin
+   ```
+
+**Option 2: Build from Source**
+1. Install ESP-IDF (v5.4+)
+2. Clone this repository
+3. Copy the template sdkconfig to \sdkconfig:
+   ```
+   # For ESP32-S3 USB
+   cp sdkconfig.esp32s3_usb sdkconfig
+   
+   # For ESP32-S3 SPDIF
+   cp sdkconfig.esp32s3_spdif sdkconfig
+
+   # For ESP32 SPDIF
+   cp sdkconfig.esp32_spdif sdkconfig
+   ```
+4. Build, flash, and monitor:
+   ```
+   idf.py build
+   idf.py -p (PORT) flash
+   idf.py -p (PORT) monitor
+   ```
+
+## First-Time Setup
+
+1. **Power on the device**
+   - Connect power to your ESP32/ESP32-S3
+   - For ESP32-S3 receiver, connect a USB DAC
+   - For ESP32 receiver, connect a SPDIF DAC to the output pin
+   - For ESP32-S3 sender, connect to a USB audio capable host
+
+2. **Connect to initial WiFi access point**
+   - The device creates a WiFi network named "ESP32-Scream"
+   - Connect to this network with your phone/computer
+   - A captive portal should open (or navigate to http://192.168.4.1/)
+
+3. **Configure your WiFi**
+   - Select your home network
+   - Enter the password
+   - Device will connect and restart
+
+4. **Access the web interface**
+   - Find the device's IP on your network
+   - Or reconnect to "ESP32-Scream" 
+   - Open the IP address in a browser
+   - Configure options based on your use case
+
+## Factory Reset
+Hold GPIO pin 0 during the first 3 seconds of boot to reset all settings.
