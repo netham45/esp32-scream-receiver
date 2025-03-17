@@ -14,7 +14,7 @@
 #include <string.h>
 #include <math.h>
 
-static const char *TAG = "scream_sender";
+#define TAG "scream_sender"
 
 // Scream header for 16-bit 48KHz stereo audio
 static const char header[] = {1, 16, 2, 0, 0};
