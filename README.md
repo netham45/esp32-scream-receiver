@@ -109,7 +109,14 @@ This device is fully compatible with [ScreamRouter](https://github.com/netham45/
    - Enter the password
    - Device will connect and restart
 
-4. **Access the web interface**
+4. **Direct Connection Mode (No WiFi Network)**
+   - If you want to use the receiver without connecting it to a WiFi network:
+     - The receiver will remain in AP mode with IP address 192.168.4.1
+     - Connect your sender device to the "ESP32-Scream" AP network
+     - Configure the sender to use destination IP 192.168.4.1 and port 4010
+     - Audio streaming will work directly between the devices
+
+5. **Access the web interface**
    - Find the device's IP on your network
    - Or reconnect to "ESP32-Scream" 
    - Open the IP address in a browser

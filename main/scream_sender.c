@@ -53,6 +53,20 @@ static esp_err_t uac_device_output_cb(uint8_t *buf, size_t len, void *arg)
     
     // Process the data in chunks
     while (s_data_in_head >= CHUNK_SIZE) {
+        // Get volume from config manager
+        app_config_t *config = config_manager_get_config();
+        float volume = config->volume;
+        
+        if (volume < 1.0f) {
+            // Apply volume scaling for 16-bit PCM audio
+            int16_t *samples = (int16_t*)s_data_in;
+            int num_samples = CHUNK_SIZE / 2; // 2 bytes per sample for 16-bit audio
+            
+            for (int i = 0; i < num_samples; i++) {
+                samples[i] = (int16_t)(samples[i] * volume);
+            }
+        }
+        
         memcpy(s_data_out + HEADER_SIZE, s_data_in, CHUNK_SIZE);
         
         // Send with retry logic
@@ -112,6 +126,16 @@ static void uac_device_set_volume_cb(uint32_t volume, void *arg)
     }
     
     ESP_LOGI(TAG, "Mapped volume: %"PRIu32"", s_volume);
+    
+    // Update config manager's volume (convert from 0-100 to 0.0-1.0 scale)
+    float config_volume = (float)s_volume / 100.0f;
+    app_config_t *config = config_manager_get_config();
+    config->volume = config_volume;
+    
+    // Save the new volume setting to NVS
+    config_manager_save_setting("volume", &config_volume, sizeof(float));
+    
+    ESP_LOGI(TAG, "Config volume updated to %.2f", config_volume);
 }
 
 esp_err_t scream_sender_init(void)
