@@ -48,6 +48,9 @@ const char html_apple_cna[] =
 #include <sys/socket.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#ifdef IS_USB
+#include "usb/uac_host.h"
+#endif
 
 #define TAG "web_server"
 
