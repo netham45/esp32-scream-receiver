@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [esp32, esp32s3, esp32s3_spdif]
+        target: [esp32_spdif, esp32s3_usb, esp32s3_spdif]
         include:
           - target: esp32_spdif
             board: esp32
