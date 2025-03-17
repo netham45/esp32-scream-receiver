@@ -15,12 +15,15 @@ jobs:
         target: [esp32, esp32s3, esp32s3_spdif]
         include:
           - target: esp32
+            board: esp32
             name: "ESP32 (SPDIF)"
             config_define: IS_SPDIF
           - target: esp32s3
+            board: esp32s3
             name: "ESP32-S3 (USB)"
             config_define: IS_USB
           - target: esp32s3_spdif
+            board: esp32s3
             name: "ESP32-S3 (SPDIF)"
             config_define: IS_SPDIF
 
@@ -52,7 +55,7 @@ jobs:
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: 'v5.4'
-          target: ${{ matrix.target }}
+          target: ${{ matrix.board }}
           
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
