@@ -1,3 +1,5 @@
+[![Build ESP32 Scream Receiver](https://github.com/netham45/esp32-scream-receiver/actions/workflows/build.yml/badge.svg)](https://github.com/netham45/esp32-scream-receiver/actions/workflows/build.yml)
+
 # ESP32 Scream Receiver
 
 A WiFi-based audio streaming receiver for the Scream protocol, implemented on ESP32/ESP32-S3 microcontrollers.
