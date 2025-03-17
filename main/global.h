@@ -9,6 +9,7 @@
 extern bool device_sleeping;
 
 #ifdef IS_USB
+#include "freertos/FreeRTOS.h"
 #include "usb/uac_host.h"
 // Global USB speaker device handle
 extern uac_host_device_handle_t s_spk_dev_handle;
