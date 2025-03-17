@@ -20,6 +20,7 @@ static app_config_t s_app_config;
 #define NVS_KEY_SAMPLE_RATE "sample_rate"
 #define NVS_KEY_BIT_DEPTH "bit_depth"
 #define NVS_KEY_VOLUME "volume"
+#define NVS_KEY_SPDIF_DATA_PIN "spdif_pin"
 #define NVS_KEY_SILENCE_THRES_MS "silence_ms"
 #define NVS_KEY_NET_CHECK_MS "net_check_ms"
 #define NVS_KEY_ACTIVITY_PACKETS "act_packets"
@@ -42,6 +43,7 @@ static void set_default_config(void) {
     s_app_config.sample_rate = SAMPLE_RATE;
     s_app_config.bit_depth = BIT_DEPTH;
     s_app_config.volume = VOLUME;
+    s_app_config.spdif_data_pin = 23; // Default SPDIF pin
     s_app_config.silence_threshold_ms = SILENCE_THRESHOLD_MS;
     s_app_config.network_check_interval_ms = NETWORK_CHECK_INTERVAL_MS;
     s_app_config.activity_threshold_packets = ACTIVITY_THRESHOLD_PACKETS;

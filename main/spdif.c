@@ -8,11 +8,14 @@
 #include "freertos/FreeRTOS.h"
 #include "driver/i2s.h"
 
-#ifdef CONFIG_SPDIF_DATA_PIN
-#define SPDIF_DATA_PIN CONFIG_SPDIF_DATA_PIN
-#else
-#define SPDIF_DATA_PIN		23
-#endif
+#include "config_manager.h"
+
+// Get SPDIF pin from config
+static uint8_t get_spdif_pin(void)
+{
+    app_config_t *config = config_manager_get_config();
+    return config->spdif_data_pin;
+}
 
 #define I2S_NUM			(0)
 
@@ -111,7 +114,7 @@ void spdif_init(int rate)
     i2s_pin_config_t pin_config = {
         .bck_io_num = -1,
         .ws_io_num = -1,
-        .data_out_num = SPDIF_DATA_PIN,
+        .data_out_num = get_spdif_pin(),
         .data_in_num = -1,
     };
 

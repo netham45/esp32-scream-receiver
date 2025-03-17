@@ -29,7 +29,7 @@
 #define NETWORK_INACTIVITY_TIMEOUT_MS 5000 // Enter sleep mode after no packets for 5 seconds
 
 
-//#define IS_SPDIF
+#define IS_SPDIF
 //#define IS_USB
 
 #define TAG "scream_receiver"

@@ -1,6 +1,7 @@
 #include "web_server.h"
 #include "wifi_manager.h"
 #include "config_manager.h"
+#include "config.h"
 
 // External function from audio.c to apply volume changes
 extern void resume_playback(void);
@@ -48,7 +49,7 @@ const char html_apple_cna[] =
 #include <netdb.h>
 #include <arpa/inet.h>
 
-static const char *TAG = "web_server";
+#define TAG "web_server"
 
 // DNS server for captive portal
 #define DNS_PORT 53
@@ -369,6 +370,45 @@ static char* html_replace_placeholders(const char* template_html, size_t templat
             html = buffer;
         }
     }
+    
+    // Handle IS_SPDIF flag
+#ifdef IS_SPDIF
+    // Add IS_SPDIF_ENABLED flag to the template
+    pos = strstr(html, "{{#IS_SPDIF}}");
+    while (pos) {
+        char *end_tag = strstr(pos, "{{/IS_SPDIF}}");
+        if (end_tag) {
+            // Replace the start tag with empty string (keep content)
+            size_t start_tag_len = strlen("{{#IS_SPDIF}}");
+            memmove(pos, pos + start_tag_len, strlen(pos + start_tag_len) + 1);
+            
+            // Find the end tag again (position changed after removing start tag)
+            end_tag = strstr(pos, "{{/IS_SPDIF}}");
+            if (end_tag) {
+                // Replace the end tag with empty string
+                memmove(end_tag, end_tag + strlen("{{/IS_SPDIF}}"), 
+                        strlen(end_tag + strlen("{{/IS_SPDIF}}")) + 1);
+            }
+        }
+        pos = strstr(html, "{{#IS_SPDIF}}");
+    }
+#else
+    // Remove IS_SPDIF sections
+    pos = strstr(html, "{{#IS_SPDIF}}");
+    while (pos) {
+        char *end_tag = strstr(pos, "{{/IS_SPDIF}}");
+        if (end_tag) {
+            // Remove the entire section including tags
+            end_tag += strlen("{{/IS_SPDIF}}");
+            memmove(pos, end_tag, strlen(end_tag) + 1);
+        } else {
+            // Incomplete tag, just remove the start tag
+            size_t start_tag_len = strlen("{{#IS_SPDIF}}");
+            memmove(pos, pos + start_tag_len, strlen(pos + start_tag_len) + 1);
+        }
+        pos = strstr(html, "{{#IS_SPDIF}}");
+    }
+#endif
     
     return html;
 }
@@ -848,6 +888,11 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "bit_depth", config->bit_depth);
     cJSON_AddNumberToObject(root, "volume", config->volume);
     
+    // SPDIF settings (only relevant when IS_SPDIF is defined)
+#ifdef IS_SPDIF
+    cJSON_AddNumberToObject(root, "spdif_data_pin", config->spdif_data_pin);
+#endif
+    
     // Sleep settings
     cJSON_AddNumberToObject(root, "silence_threshold_ms", config->silence_threshold_ms);
     cJSON_AddNumberToObject(root, "network_check_interval_ms", config->network_check_interval_ms);
@@ -1034,6 +1079,18 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     if (network_inactivity_timeout_ms && cJSON_IsNumber(network_inactivity_timeout_ms)) {
         config->network_inactivity_timeout_ms = (uint32_t)network_inactivity_timeout_ms->valueint;
     }
+    
+    // SPDIF settings
+#ifdef IS_SPDIF
+    cJSON *spdif_data_pin = cJSON_GetObjectItem(root, "spdif_data_pin");
+    if (spdif_data_pin && cJSON_IsNumber(spdif_data_pin)) {
+        // Limit the pin number to valid GPIO range (0-39 for ESP32)
+        uint8_t pin = (uint8_t)spdif_data_pin->valueint;
+        if (pin <= 39) {
+            config->spdif_data_pin = pin;
+        }
+    }
+#endif
     
     // Free the JSON object
     cJSON_Delete(root);

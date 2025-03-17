@@ -56,6 +56,11 @@ function loadSettings() {
             document.getElementById('bit_depth').value = settings.bit_depth;
             document.getElementById('volume').value = settings.volume;
             
+            // SPDIF settings (only if element exists)
+            if (document.getElementById('spdif_data_pin') && settings.spdif_data_pin !== undefined) {
+                document.getElementById('spdif_data_pin').value = settings.spdif_data_pin;
+            }
+            
             // Sleep settings
             document.getElementById('silence_threshold_ms').value = settings.silence_threshold_ms;
             document.getElementById('network_check_interval_ms').value = settings.network_check_interval_ms;
@@ -235,7 +240,7 @@ function saveConfiguration(event) {
     const ssid = document.getElementById('ssid').value.trim();
     const password = document.getElementById('password').value;
     
-    if (!ssid) {
+    if (!ssid) { 
         showAlert('Please enter or select a WiFi network');
         return;
     }

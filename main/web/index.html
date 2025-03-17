@@ -108,6 +108,13 @@
                 
                 <div class="settings-group">
                     <h2>Audio Settings</h2>
+                    {{#IS_SPDIF}}
+                    <div class="form-row">
+                        <label for="spdif_data_pin">S/PDIF Output Pin:</label>
+                        <input type="number" id="spdif_data_pin" name="spdif_data_pin" min="0" max="39" value="23">
+                        <p class="setting-description">GPIO pin number for S/PDIF digital audio output (default: 23).</p>
+                    </div>
+                    {{/IS_SPDIF}}
                     <div class="form-row">
                         <label for="sample_rate">Sample Rate (Hz):</label>
                         <input type="number" id="sample_rate" name="sample_rate" min="8000" max="192000" step="1000">
