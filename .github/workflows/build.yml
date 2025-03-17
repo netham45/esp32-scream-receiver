@@ -37,9 +37,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Initialize submodules
+        if: matrix.config_define == 'IS_USB'
         run: |
-          git submodule init
-          git submodule update
+          git submodule init components/espressif__usb_host_uac
+          git submodule update --init components/espressif__usb_host_uac
       
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -104,7 +105,7 @@ jobs:
         with:
           tag: build-${{ steps.commit.outputs.short_hash }}
           name: Build ${{ steps.commit.outputs.short_hash }}
-          artifacts: |
+            esp32-spdif-${{ steps.commit.outputs.short_hash }}.zip
             esp32-spdif-${{ steps.commit.outputs.short_hash }}.zip
             esp32s3-usb-${{ steps.commit.outputs.short_hash }}.zip
             esp32s3-spdif-${{ steps.commit.outputs.short_hash }}.zip
