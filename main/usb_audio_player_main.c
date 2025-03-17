@@ -89,7 +89,7 @@ void exit_silence_sleep_mode(void);
 bool check_network_activity(void);
 
 #ifdef IS_USB
-static uac_host_device_handle_t s_spk_dev_handle = NULL;
+uac_host_device_handle_t s_spk_dev_handle = NULL;
 static void uac_device_callback(uac_host_device_handle_t uac_device_handle, const uac_host_device_event_t event, void *arg);
 static QueueHandle_t s_event_queue = NULL;
 bool usb_host_running = true;
