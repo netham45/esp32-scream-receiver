@@ -591,18 +591,36 @@ esp_err_t wifi_manager_connect_to_strongest(void) {
         return ESP_FAIL;
     }
     
-    // Find the strongest open or WPA2 network
+    // Get stored SSID to only connect to previously configured networks
+    nvs_handle_t nvs_handle;
+    char stored_ssid[WIFI_SSID_MAX_LENGTH + 1] = {0};
+    char stored_password[WIFI_PASSWORD_MAX_LENGTH + 1] = {0};
+    bool has_stored_credentials = false;
+    
+    if (nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
+        size_t required_size = sizeof(stored_ssid);
+        if (nvs_get_str(nvs_handle, WIFI_NVS_KEY_SSID, stored_ssid, &required_size) == ESP_OK) {
+            // Also get the password
+            required_size = sizeof(stored_password);
+            nvs_get_str(nvs_handle, WIFI_NVS_KEY_PASSWORD, stored_password, &required_size);
+            has_stored_credentials = true;
+        }
+        nvs_close(nvs_handle);
+    }
+    
+    if (!has_stored_credentials) {
+        ESP_LOGI(TAG, "No stored WiFi credentials found, cannot connect to any network");
+        return ESP_FAIL;
+    }
+    
+    // Find the stored network with the strongest signal
     int strongest_index = -1;
     int strongest_rssi = -128; // Minimum possible RSSI
     
     for (int i = 0; i < networks_found; i++) {
-        // Skip enterprise networks or other complex auth modes
-        if (networks[i].authmode == WIFI_AUTH_OPEN || 
-            networks[i].authmode == WIFI_AUTH_WPA_PSK ||
-            networks[i].authmode == WIFI_AUTH_WPA2_PSK ||
-            networks[i].authmode == WIFI_AUTH_WPA_WPA2_PSK) {
-            
-            // Check if this network has stronger signal
+        // Only consider the network that matches our stored SSID
+        if (strcmp(networks[i].ssid, stored_ssid) == 0) {
+            // This is our stored network, check signal strength
             if (networks[i].rssi > strongest_rssi) {
                 strongest_rssi = networks[i].rssi;
                 strongest_index = i;
@@ -611,46 +629,19 @@ esp_err_t wifi_manager_connect_to_strongest(void) {
     }
     
     if (strongest_index == -1) {
-        ESP_LOGI(TAG, "No compatible networks found");
+        ESP_LOGI(TAG, "Stored network '%s' not found in scan results", stored_ssid);
         return ESP_FAIL;
     }
     
-    // Connect to the strongest network
-    ESP_LOGI(TAG, "Connecting to strongest network: %s (RSSI: %d)", 
+    // Connect to the stored network
+    ESP_LOGI(TAG, "Connecting to stored network: %s (RSSI: %d)", 
              networks[strongest_index].ssid, networks[strongest_index].rssi);
     
-    // Configure WiFi station with the strongest network
+    // Configure WiFi station with the stored network
     wifi_config_t wifi_sta_config = {0};
     
     strncpy((char*)wifi_sta_config.sta.ssid, networks[strongest_index].ssid, sizeof(wifi_sta_config.sta.ssid));
-    
-    // For open networks, leave password empty
-    if (networks[strongest_index].authmode != WIFI_AUTH_OPEN) {
-        // For non-open networks, we need to know the password
-        // For now, we'll try to use any stored password for this SSID
-        
-        nvs_handle_t nvs_handle;
-        char password[WIFI_PASSWORD_MAX_LENGTH + 1] = {0};
-        bool has_password = false;
-        
-        if (nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
-            size_t required_size = sizeof(password);
-            if (nvs_get_str(nvs_handle, WIFI_NVS_KEY_PASSWORD, password, &required_size) == ESP_OK) {
-                has_password = true;
-            }
-            nvs_close(nvs_handle);
-        }
-        
-        if (has_password) {
-            strncpy((char*)wifi_sta_config.sta.password, password, sizeof(wifi_sta_config.sta.password));
-        } else {
-            // Skip non-open networks if we don't have passwords for them
-            ESP_LOGI(TAG, "Can't connect to %s: no password available", networks[strongest_index].ssid);
-            
-            // Try the next strongest network
-            return ESP_FAIL;
-        }
-    }
+    strncpy((char*)wifi_sta_config.sta.password, stored_password, sizeof(wifi_sta_config.sta.password));
     
     // Update WiFi configuration
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
@@ -669,16 +660,11 @@ esp_err_t wifi_manager_connect_to_strongest(void) {
                                         pdMS_TO_TICKS(WIFI_CONNECTION_TIMEOUT_MS));
     
     if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected to strongest network: %s", networks[strongest_index].ssid);
+        ESP_LOGI(TAG, "Connected to stored network: %s", networks[strongest_index].ssid);
         s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTED;
-        
-        // Save the credentials for future use
-        wifi_manager_save_credentials(networks[strongest_index].ssid, 
-                                     (char*)wifi_sta_config.sta.password);
-        
         return ESP_OK;
     } else {
-        ESP_LOGI(TAG, "Failed to connect to strongest network: %s", networks[strongest_index].ssid);
+        ESP_LOGI(TAG, "Failed to connect to stored network: %s", networks[strongest_index].ssid);
         return ESP_FAIL;
     }
 }
