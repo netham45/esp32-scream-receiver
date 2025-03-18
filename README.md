@@ -59,7 +59,20 @@ This device is fully compatible with [ScreamRouter](https://github.com/netham45/
 
 ### Firmware Installation
 
-**Option 1: Pre-built Firmware**
+**Option 1: Web Installer (Recommended)**
+1. Visit [https://netham45.org/esp32-scream-receiver/](https://netham45.org/esp32-scream-receiver/)
+2. Connect your ESP32 device to your computer via USB
+3. Select the appropriate firmware variant for your hardware:
+   - **ESP32 SPDIF** - For ESP32 with SPDIF output
+   - **ESP32-S3 SPDIF** - For ESP32-S3 with SPDIF output
+   - **ESP32-S3 USB** - For ESP32-S3 with USB audio
+4. Click "Download Firmware" for your selected variant
+5. Once downloaded, click "Install" to begin flashing
+6. Follow the browser prompts to select your device and complete the installation
+
+The web installer uses [ESP Web Tools](https://esphome.github.io/esp-web-tools/) to flash your device directly from the browser without requiring any additional software or drivers. The web installer works from Chrome and Edge on PCs, it does not support Firefox or Mobile.
+
+**Option 2: Pre-built Firmware**
 1. Download the firmware that matches your hardware:
    - `firmware-esp32s3-usb.bin` (ESP32-S3 with USB audio)
    - `firmware-esp32s3-spdif.bin` (ESP32-S3 with SPDIF)
@@ -70,7 +83,7 @@ This device is fully compatible with [ScreamRouter](https://github.com/netham45/
    esptool.py -p (PORT) write_flash 0x0 firmware-xxx.bin
    ```
 
-**Option 2: Build from Source**
+**Option 3: Build from Source**
 1. Install ESP-IDF (v5.4+)
 2. Clone this repository
 3. Copy the template sdkconfig to \sdkconfig:
