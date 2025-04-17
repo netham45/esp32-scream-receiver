@@ -5,6 +5,8 @@
         "global.h": "c",
         "config.h": "c",
         "scream_sender.h": "c",
-        "inttypes.h": "c"
+        "inttypes.h": "c",
+        "web_server.h": "c",
+        "bq25895_web.h": "c"
     }
 }

@@ -31,6 +31,9 @@ static app_config_t s_app_config;
 #define NVS_KEY_SENDER_DEST_IP "sender_ip"
 #define NVS_KEY_SENDER_DEST_PORT "sender_port"
 
+// WiFi roaming keys
+#define NVS_KEY_RSSI_THRESHOLD "rssi_thresh"
+
 // Audio processing keys
 #define NVS_KEY_USE_DIRECT_WRITE "direct_write"
 
@@ -61,6 +64,9 @@ static void set_default_config(void) {
     s_app_config.enable_usb_sender = false;
     strcpy(s_app_config.sender_destination_ip, "192.168.1.255"); // Default to broadcast
     s_app_config.sender_destination_port = 4010; // Default Scream port
+    
+    // WiFi roaming defaults
+    s_app_config.rssi_threshold = -58; // Default RSSI threshold for roaming
     
     // Audio processing defaults
     s_app_config.use_direct_write = true; // Default to direct write mode
@@ -210,6 +216,13 @@ esp_err_t config_manager_init(void) {
     err = nvs_get_u16(nvs_handle, NVS_KEY_SENDER_DEST_PORT, &u16_value);
     if (err == ESP_OK) {
         s_app_config.sender_destination_port = u16_value;
+    }
+    
+    // Read WiFi roaming settings
+    int8_t rssi_threshold;
+    err = nvs_get_i8(nvs_handle, NVS_KEY_RSSI_THRESHOLD, &rssi_threshold);
+    if (err == ESP_OK) {
+        s_app_config.rssi_threshold = rssi_threshold;
     }
     
     // Read audio processing settings
@@ -399,6 +412,14 @@ esp_err_t config_manager_save_config(void) {
         return err;
     }
     
+    // Save WiFi roaming settings
+    err = nvs_set_i8(nvs_handle, NVS_KEY_RSSI_THRESHOLD, s_app_config.rssi_threshold);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving RSSI threshold: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    
     // Commit the changes
     err = nvs_commit(nvs_handle);
     if (err != ESP_OK) {
@@ -499,6 +520,9 @@ esp_err_t config_manager_save_setting(const char* key, void* value, size_t size)
     } else if (strcmp(key, NVS_KEY_SENDER_DEST_PORT) == 0 && size == sizeof(uint16_t)) {
         s_app_config.sender_destination_port = *(uint16_t*)value;
         err = nvs_set_u16(nvs_handle, key, s_app_config.sender_destination_port);
+    } else if (strcmp(key, NVS_KEY_RSSI_THRESHOLD) == 0 && size == sizeof(int8_t)) {
+        s_app_config.rssi_threshold = *(int8_t*)value;
+        err = nvs_set_i8(nvs_handle, key, s_app_config.rssi_threshold);
     } else if (strcmp(key, NVS_KEY_USE_DIRECT_WRITE) == 0 && size == sizeof(bool)) {
         s_app_config.use_direct_write = *(bool*)value;
         err = nvs_set_u8(nvs_handle, key, (uint8_t)s_app_config.use_direct_write);

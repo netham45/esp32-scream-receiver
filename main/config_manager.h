@@ -41,6 +41,9 @@ typedef struct {
     char sender_destination_ip[16];        // Destination IP for audio packets
     uint16_t sender_destination_port;      // Destination port for audio packets
     
+    // WiFi roaming configuration
+    int8_t rssi_threshold;                 // RSSI threshold for roaming (-58 dBm default)
+    
     // Audio processing configuration
     bool use_direct_write;                 // Use direct write instead of buffering
 } app_config_t;

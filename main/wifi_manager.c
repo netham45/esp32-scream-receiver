@@ -9,15 +9,52 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "config_manager.h"
+#include "esp_wnm.h"
+#include "esp_rrm.h"
+#include "esp_mbo.h"
+#include "esp_mac.h"
 #include <string.h>
 #include <inttypes.h>
 
 static const char *TAG = "wifi_manager";
 
+// Roaming-related definitions
+#ifndef WLAN_EID_MEASURE_REPORT
+#define WLAN_EID_MEASURE_REPORT 39
+#endif
+#ifndef MEASURE_TYPE_LCI
+#define MEASURE_TYPE_LCI 9
+#endif
+#ifndef MEASURE_TYPE_LOCATION_CIVIC
+#define MEASURE_TYPE_LOCATION_CIVIC 11
+#endif
+#ifndef WLAN_EID_NEIGHBOR_REPORT
+#define WLAN_EID_NEIGHBOR_REPORT 52
+#endif
+#ifndef ETH_ALEN
+#define ETH_ALEN 6
+#endif
+
+#define MAX_LCI_CIVIC_LEN 256 * 2 + 1
+#define MAX_NEIGHBOR_LEN 512
+
+// Default RSSI threshold for roaming
+#define DEFAULT_RSSI_THRESHOLD -58
+
+// Flag to track if neighbor report is active - moved from main file
+bool g_neighbor_report_active = false;
+
+// Helper function to get 32-bit LE value
+static inline uint32_t WPA_GET_LE32(const uint8_t *a)
+{
+    return ((uint32_t) a[3] << 24) | (a[2] << 16) | (a[1] << 8) | a[0];
+}
+
 // NVS namespace and keys for WiFi credentials
 #define WIFI_NVS_NAMESPACE "wifi_config"
 #define WIFI_NVS_KEY_SSID "ssid"
 #define WIFI_NVS_KEY_PASSWORD "password"
+#define WIFI_NVS_KEY_RSSI_THRESHOLD "rssi_threshold"
 
 // Event group to signal WiFi connection events
 static EventGroupHandle_t s_wifi_event_group;
@@ -135,16 +172,32 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                 esp_wifi_set_mode(WIFI_MODE_APSTA);
             }
             
-            if (s_retry_num < 5) {
-                ESP_LOGI(TAG, "Failed to connect to AP (attempt %d/5), reason: %" PRIu16, 
-                        s_retry_num + 1, disconn->reason);
-                s_retry_num++;
-                esp_wifi_connect();
-            } else {
-                ESP_LOGI(TAG, "Failed to connect to AP after 5 attempts");
-                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
-                s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTION_FAILED;
+            // Check if this is a roaming disconnect
+            if (disconn->reason == WIFI_REASON_ROAMING) {
+                ESP_LOGI(TAG, "Disconnected due to roaming, waiting for reconnection");
+                // No need to manually reconnect, the system will handle it
+                return;
             }
+            
+            // Implement indefinite retries with backoff
+            s_retry_num++;
+            
+            // Calculate backoff delay (exponential with cap)
+            int delay_ms = 1000; // Base delay of 1 second
+            if (s_retry_num > 1) {
+                // Exponential backoff with a maximum of 30 seconds
+                delay_ms = (1 << (s_retry_num > 5 ? 5 : s_retry_num)) * 1000;
+                if (delay_ms > 30000) {
+                    delay_ms = 30000;
+                }
+            }
+            
+            ESP_LOGI(TAG, "Connection attempt %d failed, reason: %" PRIu16 ", retrying in %d ms", 
+                    s_retry_num, disconn->reason, delay_ms);
+            
+            // Wait before reconnecting
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+            esp_wifi_connect();
         } else if (event_id == WIFI_EVENT_AP_STACONNECTED) {
             wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t*) event_data;
             ESP_LOGI(TAG, "Station connected to AP, MAC: %02x:%02x:%02x:%02x:%02x:%02x",
@@ -833,5 +886,344 @@ esp_err_t wifi_manager_scan_networks(wifi_network_info_t *networks, size_t max_n
     *networks_found = num_ap;
     
     ESP_LOGI(TAG, "Found %" PRIu16 " networks", num_ap);
+    return ESP_OK;
+}
+
+/**
+ * Process neighbor report received from AP
+ */
+void wifi_manager_neighbor_report_recv_handler(void* arg, esp_event_base_t event_base, 
+                                              int32_t event_id, void* event_data)
+{
+    if (!g_neighbor_report_active) {
+        ESP_LOGV(TAG, "Neighbor report received but not triggered by us");
+        return;
+    }
+    
+    if (!event_data) {
+        ESP_LOGE(TAG, "No event data received for neighbor report");
+        return;
+    }
+    
+    g_neighbor_report_active = false;
+    wifi_event_neighbor_report_t *neighbor_report_event = (wifi_event_neighbor_report_t*)event_data;
+    uint8_t *pos = (uint8_t *)neighbor_report_event->report;
+    char *neighbor_list = NULL;
+    
+    if (!pos) {
+        ESP_LOGE(TAG, "Neighbor report is empty");
+        return;
+    }
+    
+    uint8_t report_len = neighbor_report_event->report_len;
+    
+    // Dump report info for debugging
+    ESP_LOGD(TAG, "rrm: neighbor report len=%" PRIu16, report_len);
+    ESP_LOG_BUFFER_HEXDUMP(TAG, pos, report_len, ESP_LOG_DEBUG);
+
+    // Create neighbor list
+    neighbor_list = wifi_manager_get_btm_neighbor_list(pos + 1, report_len - 1);
+    
+    // Send BTM query with neighbor list
+    if (neighbor_list) {
+        ESP_LOGI(TAG, "Sending BTM query with neighbor list");
+        esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, neighbor_list, 0);
+        free(neighbor_list);
+    } else {
+        // Send BTM query without candidates
+        ESP_LOGI(TAG, "Sending BTM query without neighbor list");
+        esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, NULL, 0);
+    }
+}
+
+/**
+ * Handle low RSSI event from AP
+ */
+void wifi_manager_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
+                                      int32_t event_id, void* event_data)
+{
+    wifi_event_bss_rssi_low_t *event = event_data;
+    ESP_LOGI(TAG, "BSS RSSI is low: %d", event->rssi);
+    
+    // Check if RRM is supported
+    if (esp_rrm_is_rrm_supported_connection()) {
+        ESP_LOGI(TAG, "Sending neighbor report request (RRM supported)");
+        if (esp_rrm_send_neighbor_report_request() == ESP_OK) {
+            g_neighbor_report_active = true;
+        } else {
+            ESP_LOGI(TAG, "Failed to send neighbor report request, sending BTM query without candidates");
+            // Send BTM query directly without neighbor list
+            esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, NULL, 0);
+        }
+    } else if (esp_wnm_is_btm_supported_connection()) {
+        // If RRM not supported but BTM is supported, send BTM query directly
+        ESP_LOGI(TAG, "RRM not supported but BTM is, sending BTM query without candidates");
+        esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, NULL, 0);
+    } else {
+        ESP_LOGI(TAG, "Neither RRM nor BTM supported by current AP");
+    }
+}
+
+/**
+ * Create a BTM neighbor list from a neighbor report
+ */
+char* wifi_manager_get_btm_neighbor_list(uint8_t *report, size_t report_len)
+{
+    size_t len = 0;
+    const uint8_t *data;
+    int ret = 0;
+    char *lci = NULL;
+    char *civic = NULL;
+    
+    // Minimum length for a neighbor report element
+    #define NR_IE_MIN_LEN (ETH_ALEN + 4 + 1 + 1 + 1)
+
+    if (!report || report_len == 0) {
+        ESP_LOGI(TAG, "RRM neighbor report is not valid");
+        return NULL;
+    }
+
+    char *buf = calloc(1, MAX_NEIGHBOR_LEN);
+    if (!buf) {
+        ESP_LOGE(TAG, "Memory allocation for neighbor list failed");
+        goto cleanup;
+    }
+    
+    data = report;
+
+    while (report_len >= 2 + NR_IE_MIN_LEN) {
+        const uint8_t *nr;
+        lci = (char *)malloc(sizeof(char)*MAX_LCI_CIVIC_LEN);
+        if (!lci) {
+            ESP_LOGE(TAG, "Memory allocation for lci failed");
+            goto cleanup;
+        }
+        
+        civic = (char *)malloc(sizeof(char)*MAX_LCI_CIVIC_LEN);
+        if (!civic) {
+            ESP_LOGE(TAG, "Memory allocation for civic failed");
+            goto cleanup;
+        }
+        
+        uint8_t nr_len = data[1];
+        const uint8_t *pos = data, *end;
+
+        if (pos[0] != WLAN_EID_NEIGHBOR_REPORT ||
+            nr_len < NR_IE_MIN_LEN) {
+            ESP_LOGI(TAG, "Invalid Neighbor Report element: id=%" PRIu16 " len=%" PRIu16,
+                    data[0], nr_len);
+            ret = -1;
+            goto cleanup;
+        }
+
+        if (2U + nr_len > report_len) {
+            ESP_LOGI(TAG, "Invalid Neighbor Report element: id=%" PRIu16 " len=%" PRIu16 " nr_len=%" PRIu16,
+                    data[0], report_len, nr_len);
+            ret = -1;
+            goto cleanup;
+        }
+        
+        pos += 2;
+        end = pos + nr_len;
+
+        nr = pos;
+        pos += NR_IE_MIN_LEN;
+
+        lci[0] = '\0';
+        civic[0] = '\0';
+        
+        while (end - pos > 2) {
+            uint8_t s_id, s_len;
+
+            s_id = *pos++;
+            s_len = *pos++;
+            
+            if (s_len > end - pos) {
+                ret = -1;
+                goto cleanup;
+            }
+            
+            if (s_id == WLAN_EID_MEASURE_REPORT && s_len > 3) {
+                // Measurement Token[1]
+                // Measurement Report Mode[1]
+                // Measurement Type[1]
+                // Measurement Report[variable]
+                switch (pos[2]) {
+                    case MEASURE_TYPE_LCI:
+                        if (lci[0])
+                            break;
+                        memcpy(lci, pos, s_len);
+                        break;
+                    case MEASURE_TYPE_LOCATION_CIVIC:
+                        if (civic[0])
+                            break;
+                        memcpy(civic, pos, s_len);
+                        break;
+                }
+            }
+
+            pos += s_len;
+        }
+
+        ESP_LOGI(TAG, "RMM neighbor report bssid=" MACSTR
+                " info=0x%" PRIx32 " op_class=%" PRIu16 " chan=%" PRIu16 " phy_type=%" PRIu16 "%s%s%s%s",
+                MAC2STR(nr), WPA_GET_LE32(nr + ETH_ALEN),
+                nr[ETH_ALEN + 4], nr[ETH_ALEN + 5],
+                nr[ETH_ALEN + 6],
+                lci[0] ? " lci=" : "", lci,
+                civic[0] ? " civic=" : "", civic);
+
+        // neighbor start
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, " neighbor=");
+        // bssid
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, MACSTR, MAC2STR(nr));
+        // ,
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
+        // bssid info
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "0x%04" PRIx32 "", WPA_GET_LE32(nr + ETH_ALEN));
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
+        // operating class
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 4]);
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
+        // channel number
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 5]);
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
+        // phy type
+        len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 6]);
+        // optional elements, skip
+
+        data = end;
+        report_len -= 2 + nr_len;
+
+        if (lci) {
+            free(lci);
+            lci = NULL;
+        }
+        
+        if (civic) {
+            free(civic);
+            civic = NULL;
+        }
+    }
+
+cleanup:
+    if (lci) {
+        free(lci);
+    }
+    
+    if (civic) {
+        free(civic);
+    }
+
+    if (ret < 0) {
+        free(buf);
+        buf = NULL;
+    }
+    
+    return buf;
+}
+
+/**
+ * Set the RSSI threshold for roaming
+ */
+esp_err_t wifi_manager_set_rssi_threshold(int8_t rssi_threshold) {
+    ESP_LOGI(TAG, "Setting RSSI threshold to %d", rssi_threshold);
+    
+    // Save the threshold to NVS
+    nvs_handle_t nvs_handle;
+    esp_err_t ret = nvs_open(WIFI_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ret = nvs_set_i8(nvs_handle, WIFI_NVS_KEY_RSSI_THRESHOLD, rssi_threshold);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving RSSI threshold to NVS: %s", esp_err_to_name(ret));
+        nvs_close(nvs_handle);
+        return ret;
+    }
+    
+    // Commit the changes
+    ret = nvs_commit(nvs_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error committing changes to NVS: %s", esp_err_to_name(ret));
+    }
+    
+    nvs_close(nvs_handle);
+    
+    // Apply the threshold to the WiFi driver
+    return esp_wifi_set_rssi_threshold(rssi_threshold);
+}
+
+/**
+ * Get the current RSSI threshold for roaming
+ */
+esp_err_t wifi_manager_get_rssi_threshold(int8_t *rssi_threshold) {
+    if (!rssi_threshold) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    // Try to read from NVS first
+    nvs_handle_t nvs_handle;
+    esp_err_t ret = nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    
+    if (ret == ESP_OK) {
+        ret = nvs_get_i8(nvs_handle, WIFI_NVS_KEY_RSSI_THRESHOLD, rssi_threshold);
+        nvs_close(nvs_handle);
+        
+        if (ret == ESP_OK) {
+            // Successfully read from NVS
+            return ESP_OK;
+        }
+    }
+    
+    // If not found in NVS, use the default value
+    *rssi_threshold = DEFAULT_RSSI_THRESHOLD;
+    return ESP_OK;
+}
+
+/**
+ * Configure WiFi for fast roaming
+ */
+esp_err_t wifi_manager_configure_fast_roaming(void) {
+    ESP_LOGI(TAG, "Configuring fast roaming (802.11r, PMF)");
+    
+    // Get current WiFi configuration
+    wifi_config_t wifi_config;
+    ESP_ERROR_CHECK(esp_wifi_get_config(WIFI_IF_STA, &wifi_config));
+    
+    // Enable 802.11r Fast Transition
+    wifi_config.sta.pmf_cfg.capable = true;
+    wifi_config.sta.pmf_cfg.required = false;  // PMF capable but not required
+    wifi_config.sta.ft_enabled = true;         // Enable Fast Transition (802.11r)
+    
+    // Apply the updated configuration
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    
+    // Set RSSI threshold from stored value or default
+    int8_t rssi_threshold;
+    wifi_manager_get_rssi_threshold(&rssi_threshold);
+    ESP_ERROR_CHECK(esp_wifi_set_rssi_threshold(rssi_threshold));
+    
+    return ESP_OK;
+}
+
+/**
+ * Initialize roaming functionality
+ */
+esp_err_t wifi_manager_init_roaming(void) {
+    ESP_LOGI(TAG, "Initializing WiFi roaming");
+    
+    // Register event handlers for roaming-related events
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_NEIGHBOR_REP,
+                                              &wifi_manager_neighbor_report_recv_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_BSS_RSSI_LOW,
+                                              &wifi_manager_bss_rssi_low_handler, NULL));
+    
+    // Configure fast roaming
+    ESP_ERROR_CHECK(wifi_manager_configure_fast_roaming());
+    
     return ESP_OK;
 }

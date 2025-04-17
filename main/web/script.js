@@ -59,6 +59,7 @@ function loadSettings() {
             document.getElementById('ap_ssid').value = settings.ap_ssid || '';
             document.getElementById('ap_password').value = settings.ap_password || '';
             document.getElementById('hide_ap_when_connected').checked = settings.hide_ap_when_connected;
+            document.getElementById('rssi_threshold').value = settings.rssi_threshold;
             
             // Buffer settings
             document.getElementById('initial_buffer_size').value = settings.initial_buffer_size;

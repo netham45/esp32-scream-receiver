@@ -13,3 +13,4 @@ void stop_playback();
 void audio_write(uint8_t* data);
 void audio_direct_write(uint8_t *data);
 void resume_playback();
+bool is_playing();

@@ -15,3 +15,57 @@ menu "Web Server Configuration"
             Increase this value if you need to handle long URIs.
 
 endmenu
+
+menu "USB-C Power Management Configuration"
+
+    config I2C_MASTER_SCL_IO
+        int "I2C Master SCL GPIO"
+        default 22
+        help
+            GPIO number for I2C master SCL.
+
+    config I2C_MASTER_SDA_IO
+        int "I2C Master SDA GPIO"
+        default 8
+        help
+            GPIO number for I2C master SDA.
+            
+    config OTG_PIN
+        int "OTG Control GPIO"
+        default 13
+        help
+            GPIO number for OTG control pin. This pin must be high to activate boost mode.
+
+    config I2C_MASTER_FREQ_HZ
+        int "I2C Master Frequency (Hz)"
+        default 100000
+        help
+            I2C master clock frequency in Hz.
+
+    config POWER_CHIP_ADDR
+        hex "USB-C Power Chip I2C Address"
+        default 0x6B
+        help
+            I2C address of the USB-C power management chip.
+
+    config ENABLE_OTG_BOOST_MODE
+        bool "Enable OTG (Boost) Mode"
+        default y
+        help
+            Enable 5V output on PMID for USB-C port.
+
+    config BOOST_VOLTAGE_VALUE
+        hex "Boost Voltage Register Value"
+        default 0x93
+        help
+            Value for the boost voltage register (REG0A).
+            Default 0x93 sets BOOSTV[3:0] = 1001 for 5.126V output.
+
+    config BOOST_FREQUENCY_VALUE
+        hex "Boost Frequency Register Value"
+        default 0x38
+        help
+            Value for the boost frequency register (REG02).
+            Default 0x38 sets BOOST_FREQ bit (5) for 500kHz frequency.
+
+endmenu

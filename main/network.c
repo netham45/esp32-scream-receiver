@@ -22,6 +22,7 @@
 #include <errno.h>
 #include <netdb.h>            // struct addrinfo
 #include <arpa/inet.h>
+#include <sys/select.h>       // Added for select()
 #include "esp_netif.h"
 #include "audio.h"
 #include "wifi_manager.h"
@@ -79,15 +80,51 @@ void tcp_handler(void *) {
   uint16_t datahead = 0;
   resume_playback();
   while (connected) {
+    fd_set read_fds;
+    struct timeval tv;
+    int select_result;
+
+    FD_ZERO(&read_fds);
+    FD_SET(sock, &read_fds);
+
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000; // 100ms
+
+    select_result = select(sock + 1, &read_fds, NULL, NULL, &tv);
+
+    if (select_result < 0) {
+        ESP_LOGE(TAG, "TCP select error: errno %d", errno);
+        connected = false; // Or handle error differently
+        continue;
+    } else if (select_result == 0) {
+        // Timeout occurred, no data ready, loop continues (replaces vTaskDelay)
+        continue;
+    }
+    // Only proceed if select indicates data is ready (select_result > 0 and FD_ISSET)
+    if (!FD_ISSET(sock, &read_fds)) {
+        continue; // Should not happen if select_result > 0, but good practice
+    }
+
 	int result = recv(sock, data + datahead, PACKET_SIZE, 0);
-	if (!result)
+	if (result <= 0) { // Handle error or closed connection
+        if (result < 0) {
+            ESP_LOGE(TAG, "TCP recv error: errno %d", errno);
+        } else {
+            ESP_LOGI(TAG, "TCP connection closed by peer");
+        }
 		connected = false;
+        continue;
+    }
 	datahead += result;
 	
 	// Track packet reception for activity detection during sleep mode
 	if (result > 0 && monitoring_active) {
 	    packet_counter++;
 	    last_packet_time = xTaskGetTickCount(); // Update last packet time
+        // Signal the network monitor task that a packet was received
+        if (s_network_activity_event_group != NULL) {
+            xEventGroupSetBits(s_network_activity_event_group, NETWORK_PACKET_RECEIVED_BIT);
+        }
 	}
 	
 	if (datahead >= PACKET_SIZE) {
@@ -101,8 +138,7 @@ void tcp_handler(void *) {
 		memcpy(data, data + PACKET_SIZE, PACKET_SIZE);
 		datahead -= PACKET_SIZE;
 	}
-    // Just use a small task delay - no sleep during audio streaming
-    vTaskDelay(1);
+    // vTaskDelay(1) removed, replaced by select timeout
   }
   close(sock);
   stop_playback();
@@ -147,14 +183,56 @@ void udp_handler(void *) {
             ESP_LOGI(TAG, "Device is in sleep mode - not resuming playback");
         }
         while (1) {
+            fd_set read_fds;
+            struct timeval tv;
+            int select_result;
+
+            FD_ZERO(&read_fds);
+            FD_SET(sock, &read_fds);
+
+            tv.tv_sec = 0;
+            tv.tv_usec = 100000; // 100ms
+
+            select_result = select(sock + 1, &read_fds, NULL, NULL, &tv);
+
+            if (select_result < 0) {
+                ESP_LOGE(TAG, "UDP select error: errno %d", errno);
+                // Decide how to handle UDP select error, maybe break or continue
+                vTaskDelay(pdMS_TO_TICKS(100)); // Avoid busy-looping on error
+                continue;
+            } else if (select_result == 0) {
+                // Timeout occurred, no data ready, loop continues (replaces vTaskDelay)
+                continue;
+            }
+            // Only proceed if select indicates data is ready (select_result > 0 and FD_ISSET)
+             if (!FD_ISSET(sock, &read_fds)) {
+                continue; // Should not happen if select_result > 0
+            }
+
+            // Data is ready, proceed with recv
             int result = recv(sock, data + datahead, PACKET_SIZE, 0);
-			
+
+            if (result < 0) {
+                ESP_LOGE(TAG, "UDP recv error: errno %d", errno);
+                // Handle recv error if necessary, maybe continue
+                continue;
+            }
+            if (result == 0) {
+                // For UDP, recv returning 0 is unusual but might indicate an issue.
+                // Unlike TCP, it doesn't mean connection closed. Log it?
+                ESP_LOGW(TAG, "UDP recv returned 0 bytes");
+                continue;
+            }
+
 			// Track packet reception for activity detection during sleep mode
 			if (result > 0 && monitoring_active) {
 			    packet_counter++;
 			    last_packet_time = xTaskGetTickCount(); // Update last packet time
-			    
-			    // If we're in sleep mode and detected sufficient activity, 
+                // Signal the network monitor task that a packet was received
+                if (s_network_activity_event_group != NULL) {
+                    xEventGroupSetBits(s_network_activity_event_group, NETWORK_PACKET_RECEIVED_BIT);
+                }
+			    // If we're in sleep mode and detected sufficient activity,
 			    // this will be handled by the monitor task
 			}
 			
@@ -181,8 +259,7 @@ void udp_handler(void *) {
 				memcpy(data,data + PACKET_SIZE, PACKET_SIZE);
 				datahead -= PACKET_SIZE;
 			}
-            // Just use a small task delay - no sleep during audio streaming
-            vTaskDelay(1);
+             // vTaskDelay(1) removed, replaced by select timeout
         }
 
         if (sock != -1) {

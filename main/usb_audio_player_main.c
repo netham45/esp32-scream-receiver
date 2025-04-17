@@ -6,10 +6,6 @@
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
-#include "esp_wnm.h"
-#include "esp_rrm.h"
-#include "esp_mbo.h"
-#include "esp_mac.h"
 #include "string.h"
 #include "audio.h"
 #include "buffer.h"
@@ -20,6 +16,7 @@
 #include "esp_sleep.h"
 #include "global.h"
 #include "esp_pm.h" // For power management
+#include "driver/i2c.h" // For I2C communication with USB-C power chip
 #ifdef IS_USB
 #include "usb/usb_host.h"
 #include "usb/uac_host.h"
@@ -28,9 +25,11 @@
 #include "config_manager.h"
 #include "wifi_manager.h"
 #include "web_server.h"
+#include "mdns_service.h"
 #ifdef IS_USB
 #include "scream_sender.h"
 #endif
+#include "bq25895_integration.h" // Include BQ25895 integration header
 
 #define USB_HOST_TASK_PRIORITY  5
 #define UAC_TASK_PRIORITY       5
@@ -41,8 +40,30 @@
 #define RTC_CNTL_FORCE_DOWNLOAD_BOOT 1
 // Using DAC_CHECK_SLEEP_TIME_MS from config.h (2000ms)
 #define NETWORK_SLEEP_TIME_MS 10       // Light sleep between network operations
-bool g_neighbor_report_active = false;
+
+// I2C configuration for USB-C PMID power management
+#define I2C_MASTER_SCL_IO           9       // GPIO for I2C SCL
+#define I2C_MASTER_SDA_IO           8       // GPIO for I2C SDA
+#define I2C_MASTER_NUM              0       // I2C port number
+#define I2C_MASTER_FREQ_HZ          100000  // I2C master clock frequency (100kHz)
+#define I2C_MASTER_TIMEOUT_MS       1000    // I2C timeout in milliseconds
+
+// OTG control pin - must be high to activate boost mode
+#define OTG_PIN                     13      // GPIO for OTG control
+
+// USB-C Power Chip registers
+#define POWER_CHIP_ADDR             0x6B    // I2C address of the USB-C power chip
+#define REG_CONTROL2                0x02    // Control register 2 (boost frequency)
+#define REG_CONTROL3                0x03    // Control register 3 (OTG config)
+#define REG_BOOST_VOLTAGE           0x0A    // Boost voltage register
+#define REG_STATUS                  0x0B    // Status register
 bool device_sleeping = false;
+
+// I2C initialization and communication functions
+static esp_err_t i2c_master_init(void);
+static esp_err_t i2c_write_reg(uint8_t reg_addr, uint8_t data);
+static esp_err_t i2c_read_reg(uint8_t reg_addr, uint8_t *data);
+static esp_err_t usb_c_pmid_init(void);
 typedef enum {
     APP_EVENT = 0,
     UAC_DRIVER_EVENT,
@@ -54,33 +75,11 @@ typedef enum {
 #define ESP_WIFI_SCAN_AUTH_MODE_THRESHOLD WIFI_AUTH_WPA2_PSK
 
 static EventGroupHandle_t s_wifi_event_group;
+EventGroupHandle_t s_network_activity_event_group = NULL; // Event group for network activity signal
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
-#ifndef WLAN_EID_MEASURE_REPORT
-#define WLAN_EID_MEASURE_REPORT 39
-#endif
-#ifndef MEASURE_TYPE_LCI
-#define MEASURE_TYPE_LCI 9
-#endif
-#ifndef MEASURE_TYPE_LOCATION_CIVIC
-#define MEASURE_TYPE_LOCATION_CIVIC 11
-#endif
-#ifndef WLAN_EID_NEIGHBOR_REPORT
-#define WLAN_EID_NEIGHBOR_REPORT 52
-#endif
-#ifndef ETH_ALEN
-#define ETH_ALEN 6
-#endif
-
-#define MAX_LCI_CIVIC_LEN 256 * 2 + 1
-#define MAX_NEIGHBOR_LEN 512
-
-static inline uint32_t WPA_GET_LE32(const uint8_t *a)
-{
-	return ((uint32_t) a[3] << 24) | (a[2] << 16) | (a[1] << 8) | a[0];
-}
 
 
 static int s_retry_num = 0;
@@ -197,9 +196,10 @@ static void uac_device_callback(uac_host_device_handle_t uac_device_handle, cons
 		stop_playback();
         ESP_LOGI(TAG, "UAC Device disconnected");
         ESP_ERROR_CHECK(uac_host_device_close(uac_device_handle));
-        
-        // Enter deep sleep mode when DAC disconnects
-        enter_deep_sleep_mode();
+        vTaskDelay(2000); // Give two seconds for reconnect
+        if (!is_playing())
+            // Enter deep sleep mode when DAC disconnects
+            enter_deep_sleep_mode();
         return;
     }
     
@@ -346,269 +346,8 @@ static void uac_lib_task(void *arg)
 
 #endif
 
-static char * get_btm_neighbor_list(uint8_t *report, size_t report_len)
-{
-	size_t len = 0;
-	const uint8_t *data;
-	int ret = 0;
 
-	char *lci = NULL;
-	char *civic = NULL;
-	/*
-	 * Neighbor Report element (IEEE P802.11-REVmc/D5.0)
-	 * BSSID[6]
-	 * BSSID Information[4]
-	 * Operating Class[1]
-	 * Channel Number[1]
-	 * PHY Type[1]
-	 * Optional Subelements[variable]
-	 */
-#define NR_IE_MIN_LEN (ETH_ALEN + 4 + 1 + 1 + 1)
-
-	if (!report || report_len == 0) {
-		ESP_LOGI(TAG, "RRM neighbor report is not valid");
-		return NULL;
-	}
-
-	char *buf = calloc(1, MAX_NEIGHBOR_LEN);
-	if (!buf) {
-		ESP_LOGE(TAG, "Memory allocation for neighbor list failed");
-		goto cleanup;
-	}
-	data = report;
-
-	while (report_len >= 2 + NR_IE_MIN_LEN) {
-		const uint8_t *nr;
-		lci = (char *)malloc(sizeof(char)*MAX_LCI_CIVIC_LEN);
-		if (!lci) {
-			ESP_LOGE(TAG, "Memory allocation for lci failed");
-			goto cleanup;
-		}
-		civic = (char *)malloc(sizeof(char)*MAX_LCI_CIVIC_LEN);
-		if (!civic) {
-			ESP_LOGE(TAG, "Memory allocation for civic failed");
-			goto cleanup;
-		}
-		uint8_t nr_len = data[1];
-		const uint8_t *pos = data, *end;
-
-		if (pos[0] != WLAN_EID_NEIGHBOR_REPORT ||
-		    nr_len < NR_IE_MIN_LEN) {
-			ESP_LOGI(TAG, "CTRL: Invalid Neighbor Report element: id=%" PRIu16 " len=%" PRIu16,
-					data[0], nr_len);
-			ret = -1;
-			goto cleanup;
-		}
-
-		if (2U + nr_len > report_len) {
-			ESP_LOGI(TAG, "CTRL: Invalid Neighbor Report element: id=%" PRIu16 " len=%" PRIu16 " nr_len=%" PRIu16,
-					data[0], report_len, nr_len);
-			ret = -1;
-			goto cleanup;
-		}
-		pos += 2;
-		end = pos + nr_len;
-
-		nr = pos;
-		pos += NR_IE_MIN_LEN;
-
-		lci[0] = '\0';
-		civic[0] = '\0';
-		while (end - pos > 2) {
-			uint8_t s_id, s_len;
-
-			s_id = *pos++;
-			s_len = *pos++;
-			if (s_len > end - pos) {
-				ret = -1;
-				goto cleanup;
-			}
-			if (s_id == WLAN_EID_MEASURE_REPORT && s_len > 3) {
-				/* Measurement Token[1] */
-				/* Measurement Report Mode[1] */
-				/* Measurement Type[1] */
-				/* Measurement Report[variable] */
-				switch (pos[2]) {
-					case MEASURE_TYPE_LCI:
-						if (lci[0])
-							break;
-						memcpy(lci, pos, s_len);
-						break;
-					case MEASURE_TYPE_LOCATION_CIVIC:
-						if (civic[0])
-							break;
-						memcpy(civic, pos, s_len);
-						break;
-				}
-			}
-
-			pos += s_len;
-		}
-
-		ESP_LOGI(TAG, "RMM neighbor report bssid=" MACSTR
-				" info=0x%" PRIx32 " op_class=%" PRIu16 " chan=%" PRIu16 " phy_type=%" PRIu16 "%s%s%s%s",
-				MAC2STR(nr), WPA_GET_LE32(nr + ETH_ALEN),
-				nr[ETH_ALEN + 4], nr[ETH_ALEN + 5],
-				nr[ETH_ALEN + 6],
-				lci[0] ? " lci=" : "", lci,
-				civic[0] ? " civic=" : "", civic);
-
-		/* neighbor start */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, " neighbor=");
-		/* bssid */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, MACSTR, MAC2STR(nr));
-		/* , */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
-		/* bssid info */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "0x%04" PRIx32 "", WPA_GET_LE32(nr + ETH_ALEN));
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
-		/* operating class */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 4]);
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
-		/* channel number */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 5]);
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, ",");
-		/* phy type */
-		len += snprintf(buf + len, MAX_NEIGHBOR_LEN - len, "%" PRIu16, nr[ETH_ALEN + 6]);
-		/* optional elements, skip */
-
-		data = end;
-		report_len -= 2 + nr_len;
-
-		if (lci) {
-			free(lci);
-			lci = NULL;
-		}
-		if (civic) {
-			free(civic);
-			civic = NULL;
-		}
-	}
-
-cleanup:
-	if (lci) {
-		free(lci);
-	}
-	if (civic) {
-		free(civic);
-	}
-
-	if (ret < 0) {
-		free(buf);
-		buf = NULL;
-	}
-	return buf;
-}
-
-static void esp_neighbor_report_recv_handler(void* arg, esp_event_base_t event_base,int32_t event_id, void* event_data)
-{
-	if (!g_neighbor_report_active) {
-		ESP_LOGV(TAG,"Neighbor report received but not triggered by us");
-	    return;
-    }
-    if (!event_data) {
-        ESP_LOGE(TAG, "No event data received for neighbor report");
-        return;
-    }
-    g_neighbor_report_active = false;
-    uint8_t cand_list = 0;
-    wifi_event_neighbor_report_t *neighbor_report_event = (wifi_event_neighbor_report_t*)event_data;
-    uint8_t *pos = (uint8_t *)neighbor_report_event->report;
-    char * neighbor_list = NULL;
-    if (!pos) {
-        ESP_LOGE(TAG, "Neighbor report is empty");
-        return;
-    }
-    uint8_t report_len = neighbor_report_event->report_len;
-    /* dump report info */
-    ESP_LOGD(TAG, "rrm: neighbor report len=%" PRIu16, report_len);
-    ESP_LOG_BUFFER_HEXDUMP(TAG, pos, report_len, ESP_LOG_DEBUG);
-
-    /* create neighbor list */
-    neighbor_list = get_btm_neighbor_list(pos + 1, report_len - 1);
-    /* In case neighbor list is not present issue a scan and get the list from that */
-    if (!neighbor_list) {
-        /* issue scan */
-        wifi_scan_config_t params;
-        memset(&params, 0, sizeof(wifi_scan_config_t));
-        if (esp_wifi_scan_start(&params, true) < 0) {
-		    goto cleanup;
-	    }
-	    /* cleanup from net802.11 */
-        esp_wifi_clear_ap_list();
-        cand_list = 1;
-	}
-	/* send AP btm query, this will cause STA to roam as well */
-	esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, neighbor_list, cand_list);
-cleanup:
-	if (neighbor_list)
-		free(neighbor_list);
-
-}
-
-static void esp_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
-		int32_t event_id, void* event_data)
-{
-	wifi_event_bss_rssi_low_t *event = event_data;
-
-	//ESP_LOGI(TAG, "%s:bss rssi is=%d", __func__, event->rssi);
-	/* Lets check channel conditions */
-	//rrm_ctx++;
-	if (esp_rrm_send_neighbor_report_request() < 0) {
-		/* failed to send neighbor report request */
-		ESP_LOGI(TAG, "failed to send neighbor report request");
-		if (esp_wnm_send_bss_transition_mgmt_query(REASON_FRAME_LOSS, NULL, 0) < 0) {
-			ESP_LOGI(TAG, "failed to send btm query");
-		}
-	} else {
-		g_neighbor_report_active = true;
-	}
-
-}
-
-/*static void event_handler(void* arg, esp_event_base_t event_base,
-                                int32_t event_id, void* event_data)
-{
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        wifi_event_sta_disconnected_t *disconn = event_data;
-        if (disconn->reason == WIFI_REASON_ROAMING) {
-            ESP_LOGI(TAG, "station disconnected during roaming");
-        } else {
-            if (s_retry_num < 50) {
-                ESP_LOGI(TAG, "station disconnected with reason %" PRIu16, disconn->reason);
-                esp_wifi_connect();
-                s_retry_num++;
-                ESP_LOGI(TAG, "retry to connect to the AP");
-            } else {
-                esp_restart();
-            }
-        }
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        s_retry_num = 0;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-		restart_network();
-	} else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
-		ESP_LOGI(TAG, "setting rssi threshold as -58");
-		esp_wifi_set_rssi_threshold(-58);
-		if (esp_rrm_is_rrm_supported_connection()) {
-			ESP_LOGI(TAG,"RRM supported");
-                        esp_rrm_send_neighbor_report_request();
-                        g_neighbor_report_active = true;
-		} else {
-			ESP_LOGI(TAG,"RRM not supported");
-		}
-		if (esp_wnm_is_btm_supported_connection()) {
-			ESP_LOGI(TAG,"BTM supported");
-		} else {
-			ESP_LOGI(TAG,"BTM not supported");
-		}
-
-	}
-}*/
+// WiFi event handling is now managed by wifi_manager.c
 
 // Task for monitoring network activity during silence sleep mode
 TaskHandle_t network_monitor_task_handle = NULL;
@@ -616,45 +355,75 @@ volatile uint32_t packet_counter = 0;
 volatile bool monitoring_active = false;
 volatile TickType_t last_packet_time = 0;
 
-// Network packet monitoring task that runs during light sleep
+// Network packet monitoring task - uses Event Group for packet notification
 void network_monitor_task(void *params) {
     ESP_LOGI(TAG, "Network monitor task started");
-    
+
     // Initialize the last packet time
     last_packet_time = xTaskGetTickCount();
-    
+
     while (true) {
         if (monitoring_active) {
-            TickType_t current_time = xTaskGetTickCount();
-            
-            // Check for activity - either enough packets received or packet timeout
-            if (packet_counter >= ACTIVITY_THRESHOLD_PACKETS) {
-                ESP_LOGI(TAG, "Network activity detected (%" PRIu32 " packets), exiting sleep mode", 
-                        packet_counter);
-                
-                // Exit sleep mode
-                exit_silence_sleep_mode();
-                
-                // Reset counter for next sleep cycle
-                packet_counter = 0;
-                last_packet_time = current_time;
-            } 
-            // Check for network inactivity timeout
-            else if ((current_time - last_packet_time) * portTICK_PERIOD_MS >= NETWORK_INACTIVITY_TIMEOUT_MS) {
-                // If we've been in silence mode for a while with no packets, 
-                // this suggests the audio source is truly idle (not streaming)
-                ESP_LOGI(TAG, "Network inactivity timeout reached (%" PRIu16 " ms), maintaining sleep mode",
-                        NETWORK_INACTIVITY_TIMEOUT_MS);
-                
-                // Remain in sleep mode, but update timestamp to avoid log spam
-                last_packet_time = current_time;
+            // Wait for a packet notification OR timeout
+            EventBits_t bits = xEventGroupWaitBits(
+                s_network_activity_event_group,   // The event group being tested.
+                NETWORK_PACKET_RECEIVED_BIT,      // The bits within the event group to wait for.
+                pdTRUE,                           // NETWORK_PACKET_RECEIVED_BIT should be cleared before returning.
+                pdFALSE,                          // Don't wait for all bits, any bit will do (we only have one).
+                pdMS_TO_TICKS(NETWORK_CHECK_INTERVAL_MS) // Wait time in ticks.
+            );
+
+            // Check if still monitoring after the wait (could have been disabled by exit_silence_sleep_mode)
+            if (!monitoring_active) {
+                continue; // Exit loop iteration if monitoring was stopped during wait
             }
-            
-            // Sleep for a short interval before checking again
-            vTaskDelay(pdMS_TO_TICKS(NETWORK_CHECK_INTERVAL_MS));
+
+            TickType_t current_time = xTaskGetTickCount();
+            TickType_t time_since_last_packet = (current_time - last_packet_time) * portTICK_PERIOD_MS;
+
+            // Did we receive a packet notification?
+            if (bits & NETWORK_PACKET_RECEIVED_BIT) {
+                ESP_LOGD(TAG, "Monitor: Packet received event bit set.");
+                // packet_counter and last_packet_time are updated in network.c when the bit is set
+                // Check if the activity threshold is met
+                if (packet_counter >= ACTIVITY_THRESHOLD_PACKETS) {
+                    ESP_LOGI(TAG, "Network activity threshold met (%" PRIu32 " packets >= %d), exiting sleep mode",
+                            packet_counter, ACTIVITY_THRESHOLD_PACKETS);
+                    exit_silence_sleep_mode(); // This sets monitoring_active = false
+                    // Loop will continue, check monitoring_active, and suspend
+                } else {
+                     ESP_LOGD(TAG, "Monitor: Packet count %" PRIu32 " < threshold %d", packet_counter, ACTIVITY_THRESHOLD_PACKETS);
+                }
+            } else {
+                // No packet notification bit set, timeout occurred. Check for inactivity timeout.
+                ESP_LOGD(TAG, "Monitor: Wait timeout. Packets=%" PRIu32 ", time_since_last=%lu ms", packet_counter, (unsigned long)time_since_last_packet);
+                if (time_since_last_packet >= NETWORK_INACTIVITY_TIMEOUT_MS) {
+                    ESP_LOGI(TAG, "Network inactivity timeout reached (%lu ms >= %d ms), maintaining sleep mode",
+                            (unsigned long)time_since_last_packet, NETWORK_INACTIVITY_TIMEOUT_MS);
+                    // Update timestamp to prevent continuous logging of the same timeout event
+                    // Note: last_packet_time is only updated here on timeout, or in network.c on packet arrival.
+                    last_packet_time = current_time;
+                }
+            }
+            // The loop continues, waiting again with xEventGroupWaitBits which includes the delay
+
         } else {
-            // When not actively monitoring, just wait until activated
+            // When not actively monitoring, suspend the task to save CPU
+            ESP_LOGD(TAG, "Monitoring inactive, suspending monitor task.");
+            // Clear any pending event bits before suspending
+            if (s_network_activity_event_group) {
+                 xEventGroupClearBits(s_network_activity_event_group, NETWORK_PACKET_RECEIVED_BIT);
+            }
             vTaskSuspend(NULL);
+            // --- Task resumes here when vTaskResume is called (in enter_silence_sleep_mode) ---
+            ESP_LOGD(TAG, "Monitor task resumed.");
+            // Reset state when resuming
+            last_packet_time = xTaskGetTickCount();
+            packet_counter = 0; // Reset packet counter when monitoring starts/resumes
+             // Clear event bits again on resume just in case
+            if (s_network_activity_event_group) {
+                 xEventGroupClearBits(s_network_activity_event_group, NETWORK_PACKET_RECEIVED_BIT);
+            }
         }
     }
 }
@@ -813,6 +582,164 @@ bool is_gpio_pressed(gpio_num_t pin) {
     return gpio_get_level(pin) == 0; // Returns true if pin is low (pressed)
 }
 
+// I2C master initialization
+static esp_err_t i2c_master_init(void)
+{
+    i2c_config_t conf = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = I2C_MASTER_SDA_IO,
+        .scl_io_num = I2C_MASTER_SCL_IO,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = I2C_MASTER_FREQ_HZ,
+    };
+    
+    esp_err_t err = i2c_param_config(I2C_MASTER_NUM, &conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C parameter configuration failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    err = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C driver installation failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    ESP_LOGI(TAG, "I2C master initialized successfully");
+    return ESP_OK;
+}
+
+// Write to I2C register
+static esp_err_t i2c_write_reg(uint8_t reg_addr, uint8_t data)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (POWER_CHIP_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, reg_addr, true);
+    i2c_master_write_byte(cmd, data, true);
+    i2c_master_stop(cmd);
+    
+    esp_err_t err = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C write failed: %s", esp_err_to_name(err));
+    }
+    
+    return err;
+}
+
+// Read from I2C register
+static esp_err_t i2c_read_reg(uint8_t reg_addr, uint8_t *data)
+{
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (POWER_CHIP_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, reg_addr, true);
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (POWER_CHIP_ADDR << 1) | I2C_MASTER_READ, true);
+    i2c_master_read_byte(cmd, data, I2C_MASTER_LAST_NACK);
+    i2c_master_stop(cmd);
+    
+    esp_err_t err = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_MASTER_TIMEOUT_MS / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd);
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C read failed: %s", esp_err_to_name(err));
+    }
+    
+    return err;
+}
+
+// Configure OTG pin as output and pull high
+static esp_err_t otg_pin_init(void)
+{
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << OTG_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    
+    esp_err_t err = gpio_config(&io_conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "OTG pin configuration failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    // Set OTG pin high to enable boost mode
+    err = gpio_set_level(OTG_PIN, 1);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set OTG pin high: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    ESP_LOGI(TAG, "OTG pin (GPIO %d) set high to enable boost mode", OTG_PIN);
+    return ESP_OK;
+}
+
+// Initialize USB-C PMID output for 5V
+static esp_err_t usb_c_pmid_init(void)
+{
+    esp_err_t err;
+    uint8_t status;
+    
+    // Initialize OTG control pin
+    err = otg_pin_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize OTG pin");
+        return err;
+    }
+    
+    // Initialize I2C master
+    err = i2c_master_init();
+    if (err != ESP_OK) {
+        return err;
+    }
+    
+    // 1. Enable OTG (Boost) Mode: REG03 = 0x3A
+    err = i2c_write_reg(REG_CONTROL3, 0x3A);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to enable OTG mode");
+        return err;
+    }
+    ESP_LOGI(TAG, "OTG (Boost) mode enabled");
+    
+    // 2. Configure Boost Voltage (5.126V): REG0A = 0x93
+    err = i2c_write_reg(REG_BOOST_VOLTAGE, 0x93);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set boost voltage");
+        return err;
+    }
+    ESP_LOGI(TAG, "Boost voltage set to 5.126V");
+    
+    // 3. Set Boost Frequency: REG02 = 0x38
+    err = i2c_write_reg(REG_CONTROL2, 0x38);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set boost frequency");
+        return err;
+    }
+    ESP_LOGI(TAG, "Boost frequency set to 500kHz");
+    
+    // 4. Read status register to verify boost mode
+    err = i2c_read_reg(REG_STATUS, &status);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to read status register");
+        return err;
+    }
+    
+    // Check VBUS_STAT[2:0] bits (bits 5:3) - should be 111 in boost mode
+    if (((status >> 3) & 0x07) == 0x07) {
+        ESP_LOGI(TAG, "USB-C PMID output enabled successfully (status: 0x%02x)", status);
+    } else {
+        ESP_LOGW(TAG, "USB-C PMID output may not be in boost mode (status: 0x%02x)", status);
+    }
+    
+    return ESP_OK;
+}
+
 void app_main(void)
 {
     // Initialize NVS (required for USB subsystem)
@@ -822,6 +749,26 @@ void app_main(void)
       ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    // Initialize BQ25895 Battery Charger
+    ESP_LOGI(TAG, "Initializing BQ25895 battery charger");
+    esp_err_t bq_err = bq25895_integration_init();
+    if (bq_err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize BQ25895: %s", esp_err_to_name(bq_err));
+        // Decide if this is a critical failure or if the app can continue
+    } else {
+        ESP_LOGI(TAG, "BQ25895 initialized successfully");
+    }
+    
+    // USB-C PMID output is now handled by the BQ25895 driver
+
+    // Create the event group for network activity signaling
+    s_network_activity_event_group = xEventGroupCreate();
+    if (s_network_activity_event_group == NULL) {
+        ESP_LOGE(TAG, "Failed to create network activity event group");
+        // Handle error appropriately, maybe restart
+        esp_restart();
+    }
     
     // Get the wake cause (why the device booted)
     esp_sleep_wakeup_cause_t wakeup_cause = esp_sleep_get_wakeup_cause();
@@ -858,6 +805,11 @@ void app_main(void)
                 // Clear WiFi credentials from ESP's internal WiFi storage
                 esp_wifi_restore();
                 
+                // Reset all settings to defaults
+                config_manager_reset();
+                
+                // To be extra safe, erase the entire NVS (all namespaces)
+                nvs_flash_erase();
                 // Reset all settings to defaults
                 config_manager_reset();
                 
@@ -918,10 +870,10 @@ void app_main(void)
             if (wifi_manager_has_credentials()) {
                 ESP_LOGI(TAG, "No DAC detected and WiFi is configured, going to deep sleep");
                 // Configure timer wakeup
-                esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000);
+                //esp_sleep_enable_timer_wakeup(DAC_CHECK_SLEEP_TIME_MS * 1000);
                 // Go to deep sleep immediately
-                esp_deep_sleep_start();
-                return; // Never reached
+                //esp_deep_sleep_start();
+                //return; // Never reached
             } else {
                 ESP_LOGI(TAG, "No DAC detected but no WiFi configured, continuing with WiFi setup");
             }
@@ -1051,11 +1003,8 @@ void wifi_init_sta(void)
     // Initialize the WiFi manager
     ESP_ERROR_CHECK(wifi_manager_init());
     
-    // Register our existing event handlers for specific WiFi events
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_NEIGHBOR_REP,
-                                              &esp_neighbor_report_recv_handler, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_BSS_RSSI_LOW,
-                                              &esp_bss_rssi_low_handler, NULL));
+    // Initialize roaming functionality
+    ESP_ERROR_CHECK(wifi_manager_init_roaming());
     
     // Try to connect to the strongest network first
     esp_err_t ret = wifi_manager_connect_to_strongest();
@@ -1074,9 +1023,12 @@ void wifi_init_sta(void)
     
     ESP_LOGI(TAG, "WiFi initialization completed");
     
-    // If we're connected, set the RSSI threshold
+    // If we're connected, configure roaming
     if (wifi_manager_get_state() == WIFI_MANAGER_STATE_CONNECTED) {
-        esp_wifi_set_rssi_threshold(-58);
+        // Get and apply the RSSI threshold from config
+        int8_t rssi_threshold;
+        wifi_manager_get_rssi_threshold(&rssi_threshold);
+        ESP_LOGI(TAG, "Setting RSSI threshold to %d", rssi_threshold);
         
         // Notify the network module that WiFi is connected
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
@@ -1086,6 +1038,10 @@ void wifi_init_sta(void)
         if (wifi_manager_get_current_ssid(ssid, sizeof(ssid)) == ESP_OK) {
             ESP_LOGI(TAG, "Connected to AP: %s", ssid);
         }
+        
+        // Start mDNS service for Scream discovery
+        ESP_LOGI(TAG, "Starting mDNS service for Scream discovery");
+        mdns_service_start();
     } else {
         ESP_LOGI(TAG, "WiFi not connected, waiting for configuration via AP portal");
     }

@@ -80,6 +80,11 @@
                         <input type="checkbox" id="hide_ap_when_connected" name="hide_ap_when_connected">
                         <p class="setting-description">When enabled, the AP network is only visible when not connected to WiFi.</p>
                     </div>
+                    <div class="form-row">
+                        <label for="rssi_threshold">RSSI Threshold (dBm):</label>
+                        <input type="number" id="rssi_threshold" name="rssi_threshold" min="-100" max="-30" step="1">
+                        <p class="setting-description">Signal strength threshold for WiFi roaming (-58 dBm default). Lower values (more negative) make roaming less aggressive.</p>
+                    </div>
                 </div>
                 
                 <div class="settings-group">

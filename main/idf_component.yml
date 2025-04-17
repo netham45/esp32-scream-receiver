@@ -1,4 +1,5 @@
 dependencies:
+  espressif/mdns: "*"
   idf: ">=5.0"
   espressif/usb_host_uac:
     version: "1.0.*"

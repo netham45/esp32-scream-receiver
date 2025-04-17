@@ -2,6 +2,7 @@
 
 #include "esp_err.h"
 #include "esp_wifi_types.h"
+#include "esp_event.h"
 #include <stdbool.h>
 
 // Configuration for WiFi AP mode
@@ -121,3 +122,64 @@ esp_err_t wifi_manager_scan_networks(wifi_network_info_t *networks, size_t max_n
  * @return esp_err_t ESP_OK on success, ESP_FAIL if no compatible networks or connection fails
  */
 esp_err_t wifi_manager_connect_to_strongest(void);
+
+/**
+ * @brief Process neighbor report received from AP
+ * 
+ * @param arg Event handler argument
+ * @param event_base Event base
+ * @param event_id Event ID
+ * @param event_data Event data
+ */
+void wifi_manager_neighbor_report_recv_handler(void* arg, esp_event_base_t event_base, 
+                                              int32_t event_id, void* event_data);
+
+/**
+ * @brief Handle low RSSI event from AP
+ * 
+ * @param arg Event handler argument
+ * @param event_base Event base
+ * @param event_id Event ID
+ * @param event_data Event data
+ */
+void wifi_manager_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
+                                      int32_t event_id, void* event_data);
+
+/**
+ * @brief Create a BTM neighbor list from a neighbor report
+ * 
+ * @param report Neighbor report data
+ * @param report_len Length of the report data
+ * @return char* Formatted neighbor list string (must be freed by caller)
+ */
+char* wifi_manager_get_btm_neighbor_list(uint8_t *report, size_t report_len);
+
+/**
+ * @brief Set the RSSI threshold for roaming
+ * 
+ * @param rssi_threshold RSSI threshold value (negative dBm, e.g. -58)
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t wifi_manager_set_rssi_threshold(int8_t rssi_threshold);
+
+/**
+ * @brief Get the current RSSI threshold for roaming
+ * 
+ * @param rssi_threshold Pointer to store the RSSI threshold value
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t wifi_manager_get_rssi_threshold(int8_t *rssi_threshold);
+
+/**
+ * @brief Configure WiFi for fast roaming (802.11r, PMF)
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t wifi_manager_configure_fast_roaming(void);
+
+/**
+ * @brief Initialize roaming functionality
+ * 
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t wifi_manager_init_roaming(void);

@@ -24,6 +24,10 @@ TickType_t last_audio_time = 0;
 // Forward declaration of the sleep function we'll define in usb_audio_player_main.c
 extern void enter_silence_sleep_mode();
 
+bool is_playing() {
+  return playing;
+}
+
 void resume_playback() {
 #ifdef IS_USB
     // Only try to resume if we have a valid DAC handle
