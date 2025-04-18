@@ -297,7 +297,7 @@ static int32_t calculate_median_microseconds() {
     }
 }
 
-// Function to calculate median round trip time
+// Function to calculate median round trip time with outlier filtering
 static int32_t calculate_median_round_trip() {
     if (ntp_history.count == 0) {
         return 0;
@@ -310,13 +310,48 @@ static int32_t calculate_median_round_trip() {
     // Sort the array
     std::sort(temp, temp + ntp_history.count);
     
+    // Calculate quartiles for outlier detection
+    int q1_idx = ntp_history.count / 4;
+    int q3_idx = (3 * ntp_history.count) / 4;
+    int32_t q1 = temp[q1_idx];
+    int32_t q3 = temp[q3_idx];
+    int32_t iqr = q3 - q1;
+    
+    // Define bounds for outliers
+    int32_t lower_bound = q1 - 1.5 * iqr;
+    int32_t upper_bound = q3 + 1.5 * iqr;
+    
+    // Filter outliers
+    int32_t filtered[NTP_HISTORY_SIZE];
+    int filtered_count = 0;
+    
+    for (int i = 0; i < ntp_history.count; i++) {
+        if (ntp_history.round_trip_ms[i] >= lower_bound && ntp_history.round_trip_ms[i] <= upper_bound) {
+            filtered[filtered_count++] = ntp_history.round_trip_ms[i];
+        }
+    }
+    
+    // If we filtered out too many, fall back to original
+    if (filtered_count < 3 && ntp_history.count >= 3) {
+        ESP_LOGW(TAG, "Too many RTT outliers filtered (%d/%d), using original data", 
+                 ntp_history.count - filtered_count, ntp_history.count);
+        filtered_count = ntp_history.count;
+        memcpy(filtered, temp, ntp_history.count * sizeof(int32_t));
+    } else if (filtered_count < ntp_history.count) {
+        ESP_LOGI(TAG, "Filtered %d/%d RTT outliers (bounds: [%d, %d] ms)", 
+                 ntp_history.count - filtered_count, ntp_history.count, lower_bound, upper_bound);
+    }
+    
+    // Sort the filtered array
+    std::sort(filtered, filtered + filtered_count);
+    
     // Return the median value
-    if (ntp_history.count % 2 == 0) {
+    if (filtered_count % 2 == 0) {
         // Even number of elements, average the middle two
-        return (temp[ntp_history.count/2 - 1] + temp[ntp_history.count/2]) / 2;
+        return (filtered[filtered_count/2 - 1] + filtered[filtered_count/2]) / 2;
     } else {
         // Odd number of elements, return the middle one
-        return temp[ntp_history.count/2];
+        return filtered[filtered_count/2];
     }
 }
 
@@ -324,30 +359,30 @@ static void set_system_time(time_t time_value, int32_t microseconds, int32_t rou
     // Add the new timestamp to our history
     add_timestamp_to_history(time_value, microseconds, round_trip_ms);
     
-    // Only update system time if we have enough samples
+    // Only update system time if we have enough samples for network jitter calculation
     if (ntp_history.count >= 3) {
-        // Calculate median to eliminate outliers
-        time_t median_time = calculate_median_timestamp();
-        int32_t median_microseconds = calculate_median_microseconds();
+        // Calculate network jitter and median round trip time with outlier filtering
+        double network_jitter = calculate_network_jitter(ntp_history.round_trip_ms, ntp_history.count);
+        int32_t median_round_trip = calculate_median_round_trip();
         
-        // Calculate time jitter and range
+        // Calculate time jitter and range (for logging only)
         double time_jitter = calculate_time_jitter(ntp_history.timestamps, ntp_history.microseconds, ntp_history.count);
         time_t min_time, max_time;
         calculate_time_range(ntp_history.timestamps, ntp_history.count, &min_time, &max_time);
         time_t range = max_time - min_time;
         
-        // Calculate network jitter and median round trip time
-        double network_jitter = calculate_network_jitter(ntp_history.round_trip_ms, ntp_history.count);
-        int32_t median_round_trip = calculate_median_round_trip();
+        // Use the most recent timestamp (not median) since we only care about network jitter
+        time_t current_time = time_value;
+        int32_t current_microseconds = microseconds;
         
-        // Adjust time for network delay (half of round trip time)
+        // Adjust time for network delay (half of median round trip time)
         int32_t one_way_delay_us = (median_round_trip * 1000) / 2; // Convert ms to us and divide by 2
         
         // Adjust microseconds for one-way delay
-        int32_t adjusted_microseconds = median_microseconds + one_way_delay_us;
+        int32_t adjusted_microseconds = current_microseconds + one_way_delay_us;
         
         // Handle overflow of microseconds
-        time_t adjusted_time = median_time;
+        time_t adjusted_time = current_time;
         if (adjusted_microseconds >= 1000000) {
             adjusted_time += adjusted_microseconds / 1000000;
             adjusted_microseconds %= 1000000;
@@ -355,14 +390,14 @@ static void set_system_time(time_t time_value, int32_t microseconds, int32_t rou
         
         struct timeval now = { .tv_sec = adjusted_time, .tv_usec = adjusted_microseconds };
         settimeofday(&now, NULL);
-        ESP_LOGI(TAG, "System time set: %lld.%06d (median of %d samples, adjusted for network delay)", 
-                 (long long)adjusted_time, adjusted_microseconds, ntp_history.count);
+        ESP_LOGI(TAG, "System time set: %lld.%06d (using latest sample, adjusted for network delay)", 
+                 (long long)adjusted_time, adjusted_microseconds);
         ESP_LOGI(TAG, "Time jitter: %.6f seconds, range: %lld seconds (min: %lld, max: %lld)", 
                  time_jitter, (long long)range, (long long)min_time, (long long)max_time);
         ESP_LOGI(TAG, "Network stats: median RTT: %d ms, one-way delay: %d us, network jitter: %.3f ms", 
                  median_round_trip, one_way_delay_us, network_jitter);
     } else {
-        ESP_LOGI(TAG, "Added timestamp to history (%d/%d samples)", 
+        ESP_LOGI(TAG, "Added timestamp to history (%d/%d samples needed for jitter calculation)", 
                  ntp_history.count, NTP_HISTORY_SIZE);
     }
 }
