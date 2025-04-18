@@ -18,7 +18,7 @@ bool playing = false;
 uint8_t volume = 100;
 uint8_t silence[32] = {0};
 bool is_silent = false;
-uint32_t silence_duration_ms = 0;
+uint64_t silence_duration_ms = 0;
 TickType_t last_audio_time = 0;
 
 // Forward declaration of the sleep function we'll define in usb_audio_player_main.c
@@ -123,8 +123,14 @@ void pcm_handler(void*) {
                   last_audio_time = current_time; // Start the silence timer
               }
               
-              // Calculate how long we've been in silence
-              silence_duration_ms = (current_time - last_audio_time) * portTICK_PERIOD_MS;
+              // Calculate how long we've been in silence, handling tick counter rollover
+              // When current_time < last_audio_time, it means the counter has rolled over
+              if (current_time < last_audio_time) {
+                  // Handle rollover: calculate time until max value, then add time since 0
+                  silence_duration_ms = ((portMAX_DELAY - last_audio_time) + current_time) * portTICK_PERIOD_MS;
+              } else {
+                  silence_duration_ms = (current_time - last_audio_time) * portTICK_PERIOD_MS;
+              }
               
               // Only log occasionally to avoid spamming
               if (silence_duration_ms % 5000 == 0 && silence_duration_ms > 0) {
@@ -133,12 +139,18 @@ void pcm_handler(void*) {
               
               // Check if silence threshold is reached - use config value
               app_config_t *config = config_manager_get_config();
-              if (silence_duration_ms >= config->silence_threshold_ms) {
-                  ESP_LOGI(TAG, "Silence threshold reached (%" PRIu32 " ms), entering sleep mode", 
-                          silence_duration_ms);
-                  
-                  // Trigger sleep mode
-                  enter_silence_sleep_mode();
+              if (silence_duration_ms < 30000) {
+                if (silence_duration_ms >= config->silence_threshold_ms) {
+                    ESP_LOGI(TAG, "Silence threshold reached (%" PRIu32 " ms), entering sleep mode", 
+                            silence_duration_ms);
+                    
+                    // Trigger sleep mode
+                    enter_silence_sleep_mode();
+                }
+              } else {
+                ESP_LOGI(TAG, "Absurd silence threshold ignored (%" PRIu32 " ms)", 
+                  silence_duration_ms);
+                  last_audio_time = current_time;
               }
           }
       }

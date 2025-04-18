@@ -26,6 +26,7 @@
 #include "wifi_manager.h"
 #include "web_server.h"
 #include "mdns_service.h"
+#include "ntp_client.h"
 #ifdef IS_USB
 #include "scream_sender.h"
 #endif
@@ -932,6 +933,9 @@ void app_main(void)
     setup_buffer();
     setup_audio();
     setup_network();
+    initialize_ntp_client();
+    ESP_LOGI(TAG, "Starting mDNS service for Scream discovery");
+    mdns_service_start();
     
 #ifdef IS_USB
     // Initialize the USB Scream Sender if USB mode is enabled
