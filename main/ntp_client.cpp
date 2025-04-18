@@ -6,6 +6,7 @@
 #include <errno.h> // Required for errno
 // #include <exception> // Not using C++ exceptions
 // #include <stdexcept> // Not using C++ exceptions
+#include <inttypes.h> // For PRI macros
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_system.h"
@@ -338,7 +339,7 @@ static int32_t calculate_median_round_trip() {
         filtered_count = ntp_history.count;
         memcpy(filtered, temp, ntp_history.count * sizeof(int32_t));
     } else if (filtered_count < ntp_history.count) {
-        ESP_LOGI(TAG, "Filtered %d/%d RTT outliers (bounds: [%d, %d] ms)", 
+        ESP_LOGI(TAG, "Filtered %d/%d RTT outliers (bounds: [%" PRId32 ", %" PRId32 "] ms)", 
                  ntp_history.count - filtered_count, ntp_history.count, lower_bound, upper_bound);
     }
     
@@ -390,11 +391,11 @@ static void set_system_time(time_t time_value, int32_t microseconds, int32_t rou
         
         struct timeval now = { .tv_sec = adjusted_time, .tv_usec = adjusted_microseconds };
         settimeofday(&now, NULL);
-        ESP_LOGI(TAG, "System time set: %lld.%06d (using latest sample, adjusted for network delay)", 
+        ESP_LOGI(TAG, "System time set: %lld.%06" PRId32 " (using latest sample, adjusted for network delay)", 
                  (long long)adjusted_time, adjusted_microseconds);
         ESP_LOGI(TAG, "Time jitter: %.6f seconds, range: %lld seconds (min: %lld, max: %lld)", 
                  time_jitter, (long long)range, (long long)min_time, (long long)max_time);
-        ESP_LOGI(TAG, "Network stats: median RTT: %d ms, one-way delay: %d us, network jitter: %.3f ms", 
+        ESP_LOGI(TAG, "Network stats: median RTT: %" PRId32 " ms, one-way delay: %" PRId32 " us, network jitter: %.3f ms", 
                  median_round_trip, one_way_delay_us, network_jitter);
     } else {
         ESP_LOGI(TAG, "Added timestamp to history (%d/%d samples needed for jitter calculation)", 
@@ -720,7 +721,7 @@ static void ntp_client_task(void *pvParameters) {
                         // The difference is 70 years in seconds = 2208988800UL
                         time_t unix_time = seconds_since_1900 - 2208988800UL;
                         
-                        ESP_LOGI(TAG, "Received NTP time: %lu.%06d, Unix time: %lu.%06d", 
+                        ESP_LOGI(TAG, "Received NTP time: %lu.%06" PRId32 ", Unix time: %lu.%06" PRId32 "", 
                                 (unsigned long)seconds_since_1900, microseconds, 
                                 (unsigned long)unix_time, microseconds);
                         

@@ -7,6 +7,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <inttypes.h>
 
 static const char *TAG = "bq25895";
 
@@ -128,7 +129,7 @@ esp_err_t bq25895_init(const bq25895_config_t *cfg)
     config = *cfg;
     i2c_port = cfg->i2c_port;
 
-    ESP_LOGI(TAG, "Initializing BQ25895 on I2C port %d (SDA: %d, SCL: %d, freq: %d Hz)",
+    ESP_LOGI(TAG, "Initializing BQ25895 on I2C port %d (SDA: %d, SCL: %d, freq: %" PRIu32 " Hz)",
              cfg->i2c_port, cfg->sda_gpio, cfg->scl_gpio, cfg->i2c_freq);
 
     // Configure I2C
@@ -734,4 +735,3 @@ esp_err_t bq25895_set_boost_voltage(uint16_t voltage_mv)
 
     return ESP_OK;
 }
-
