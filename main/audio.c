@@ -18,7 +18,7 @@ bool playing = false;
 uint8_t volume = 100;
 uint8_t silence[32] = {0};
 bool is_silent = false;
-uint64_t silence_duration_ms = 0;
+uint32_t silence_duration_ms = 0;
 TickType_t last_audio_time = 0;
 
 // Forward declaration of the sleep function we'll define in usb_audio_player_main.c
