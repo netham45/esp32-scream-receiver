@@ -25,11 +25,17 @@ typedef enum {
     WIFI_MANAGER_STATE_AP_MODE
 } wifi_manager_state_t;
 
+// WiFi band definitions
+#define WIFI_BAND_2_4GHZ 0
+#define WIFI_BAND_5GHZ   1
+
 // Structure to hold WiFi network scan result info
 typedef struct {
     char ssid[WIFI_SSID_MAX_LENGTH + 1];
     int8_t rssi;
     wifi_auth_mode_t authmode;
+    uint8_t channel;    // Primary channel
+    uint8_t band;       // 0 = 2.4GHz, 1 = 5GHz
 } wifi_network_info_t;
 
 /**
@@ -183,3 +189,11 @@ esp_err_t wifi_manager_configure_fast_roaming(void);
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t wifi_manager_init_roaming(void);
+
+/**
+ * @brief Set the band preference for WiFi connections
+ * 
+ * @param preference 1 = prefer 5GHz, 0 = no preference
+ * @return esp_err_t ESP_OK on success
+ */
+esp_err_t wifi_manager_set_band_preference(uint8_t preference);

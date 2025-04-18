@@ -18,6 +18,24 @@
 
 static const char *TAG = "wifi_manager";
 
+// WiFi band definitions
+#define WIFI_BAND_2_4GHZ 0
+#define WIFI_BAND_5GHZ   1
+
+// Channel ranges for different bands
+// 2.4 GHz: channels 1-14
+// 5 GHz: channels 32-173
+#define WIFI_FIRST_2_4GHZ_CHANNEL 1
+#define WIFI_LAST_2_4GHZ_CHANNEL  14
+#define WIFI_FIRST_5GHZ_CHANNEL   32
+
+// Minimum RSSI threshold for 5GHz to be considered "good enough"
+// If 5GHz signal is weaker than this, we might prefer 2.4GHz
+#define WIFI_5GHZ_MIN_RSSI -70
+
+// NVS key for band preference
+#define WIFI_NVS_KEY_BAND_PREFERENCE "band_pref"
+
 // Roaming-related definitions
 #ifndef WLAN_EID_MEASURE_REPORT
 #define WLAN_EID_MEASURE_REPORT 39
@@ -40,6 +58,9 @@ static const char *TAG = "wifi_manager";
 
 // Default RSSI threshold for roaming
 #define DEFAULT_RSSI_THRESHOLD -58
+
+// Default band preference (1 = prefer 5GHz, 0 = no preference)
+#define DEFAULT_BAND_PREFERENCE 1
 
 // Flag to track if neighbor report is active - moved from main file
 bool g_neighbor_report_active = false;
@@ -606,121 +627,7 @@ esp_err_t wifi_manager_connect(const char *ssid, const char *password) {
     }
 }
 
-/**
- * Connect to strongest available network
- */
-esp_err_t wifi_manager_connect_to_strongest(void) {
-    ESP_LOGI(TAG, "Scanning and connecting to strongest network");
-    
-    // First, stop current WiFi connection if any
-    esp_wifi_disconnect();
-    
-    // Set APSTA mode and start WiFi if not already started
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    
-    // Try to start WiFi
-    esp_err_t err = esp_wifi_start();
-    if (err != ESP_OK && err == ESP_ERR_WIFI_NOT_STARTED) {
-        ESP_LOGE(TAG, "Failed to start WiFi: %s", esp_err_to_name(err));
-        return err;
-    }
-    
-    // Clear the status bits
-    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
-    
-    // Scan for networks - use maximum scan results (30 is a reasonable limit)
-    #define MAX_SCAN_RESULTS 30
-    wifi_network_info_t networks[MAX_SCAN_RESULTS];
-    size_t networks_found = 0;
-    
-    esp_err_t ret = wifi_manager_scan_networks(networks, MAX_SCAN_RESULTS, &networks_found);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to scan networks: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    if (networks_found == 0) {
-        ESP_LOGI(TAG, "No networks found");
-        return ESP_FAIL;
-    }
-    
-    // Get stored SSID to only connect to previously configured networks
-    nvs_handle_t nvs_handle;
-    char stored_ssid[WIFI_SSID_MAX_LENGTH + 1] = {0};
-    char stored_password[WIFI_PASSWORD_MAX_LENGTH + 1] = {0};
-    bool has_stored_credentials = false;
-    
-    if (nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
-        size_t required_size = sizeof(stored_ssid);
-        if (nvs_get_str(nvs_handle, WIFI_NVS_KEY_SSID, stored_ssid, &required_size) == ESP_OK) {
-            // Also get the password
-            required_size = sizeof(stored_password);
-            nvs_get_str(nvs_handle, WIFI_NVS_KEY_PASSWORD, stored_password, &required_size);
-            has_stored_credentials = true;
-        }
-        nvs_close(nvs_handle);
-    }
-    
-    if (!has_stored_credentials) {
-        ESP_LOGI(TAG, "No stored WiFi credentials found, cannot connect to any network");
-        return ESP_FAIL;
-    }
-    
-    // Find the stored network with the strongest signal
-    int strongest_index = -1;
-    int strongest_rssi = -128; // Minimum possible RSSI
-    
-    for (int i = 0; i < networks_found; i++) {
-        // Only consider the network that matches our stored SSID
-        if (strcmp(networks[i].ssid, stored_ssid) == 0) {
-            // This is our stored network, check signal strength
-            if (networks[i].rssi > strongest_rssi) {
-                strongest_rssi = networks[i].rssi;
-                strongest_index = i;
-            }
-        }
-    }
-    
-    if (strongest_index == -1) {
-        ESP_LOGI(TAG, "Stored network '%s' not found in scan results", stored_ssid);
-        return ESP_FAIL;
-    }
-    
-    // Connect to the stored network
-    ESP_LOGI(TAG, "Connecting to stored network: %s (RSSI: %d)", 
-             networks[strongest_index].ssid, networks[strongest_index].rssi);
-    
-    // Configure WiFi station with the stored network
-    wifi_config_t wifi_sta_config = {0};
-    
-    strncpy((char*)wifi_sta_config.sta.ssid, networks[strongest_index].ssid, sizeof(wifi_sta_config.sta.ssid));
-    strncpy((char*)wifi_sta_config.sta.password, stored_password, sizeof(wifi_sta_config.sta.password));
-    
-    // Update WiFi configuration
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
-    
-    // Connect to the network
-    ESP_ERROR_CHECK(esp_wifi_connect());
-    
-    // Update state
-    s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTING;
-    
-    // Wait for connection with timeout
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-                                        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-                                        pdFALSE,
-                                        pdFALSE,
-                                        pdMS_TO_TICKS(WIFI_CONNECTION_TIMEOUT_MS));
-    
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "Connected to stored network: %s", networks[strongest_index].ssid);
-        s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTED;
-        return ESP_OK;
-    } else {
-        ESP_LOGI(TAG, "Failed to connect to stored network: %s", networks[strongest_index].ssid);
-        return ESP_FAIL;
-    }
-}
+// Original function replaced with enhanced version below
 
 /**
  * Stop the WiFi manager and release resources
@@ -739,6 +646,71 @@ esp_err_t wifi_manager_stop(void) {
     s_wifi_manager_state = WIFI_MANAGER_STATE_NOT_INITIALIZED;
     
     return ESP_OK;
+}
+
+/**
+ * Determine WiFi band from channel number
+ */
+static uint8_t wifi_manager_get_band_from_channel(uint8_t channel) {
+    if (channel >= WIFI_FIRST_2_4GHZ_CHANNEL && channel <= WIFI_LAST_2_4GHZ_CHANNEL) {
+        return WIFI_BAND_2_4GHZ;
+    } else if (channel >= WIFI_FIRST_5GHZ_CHANNEL) {
+        return WIFI_BAND_5GHZ;
+    } else {
+        // Default to 2.4GHz for unknown channels
+        return WIFI_BAND_2_4GHZ;
+    }
+}
+
+/**
+ * Get the band preference setting
+ */
+static uint8_t wifi_manager_get_band_preference(void) {
+    nvs_handle_t nvs_handle;
+    uint8_t band_preference = DEFAULT_BAND_PREFERENCE;
+    
+    esp_err_t ret = nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle);
+    if (ret == ESP_OK) {
+        uint8_t value;
+        ret = nvs_get_u8(nvs_handle, WIFI_NVS_KEY_BAND_PREFERENCE, &value);
+        if (ret == ESP_OK) {
+            band_preference = value;
+        }
+        nvs_close(nvs_handle);
+    }
+    
+    return band_preference;
+}
+
+/**
+ * Set the band preference setting
+ */
+esp_err_t wifi_manager_set_band_preference(uint8_t preference) {
+    ESP_LOGI(TAG, "Setting band preference to %d", preference);
+    
+    nvs_handle_t nvs_handle;
+    esp_err_t ret = nvs_open(WIFI_NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error opening NVS handle: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ret = nvs_set_u8(nvs_handle, WIFI_NVS_KEY_BAND_PREFERENCE, preference);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving band preference to NVS: %s", esp_err_to_name(ret));
+        nvs_close(nvs_handle);
+        return ret;
+    }
+    
+    // Commit the changes
+    ret = nvs_commit(nvs_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Error committing changes to NVS: %s", esp_err_to_name(ret));
+    }
+    
+    nvs_close(nvs_handle);
+    return ret;
 }
 
 /**
@@ -868,6 +840,13 @@ esp_err_t wifi_manager_scan_networks(wifi_network_info_t *networks, size_t max_n
         networks[i].ssid[WIFI_SSID_MAX_LENGTH] = '\0'; // Ensure null-termination
         networks[i].rssi = ap_records[i].rssi;
         networks[i].authmode = ap_records[i].authmode;
+        networks[i].channel = ap_records[i].primary;
+        networks[i].band = wifi_manager_get_band_from_channel(ap_records[i].primary);
+        
+        ESP_LOGD(TAG, "Network: %s, Channel: %d, Band: %s, RSSI: %d", 
+                networks[i].ssid, networks[i].channel, 
+                networks[i].band == WIFI_BAND_5GHZ ? "5GHz" : "2.4GHz",
+                networks[i].rssi);
     }
     
     // Free the allocated memory
@@ -887,6 +866,183 @@ esp_err_t wifi_manager_scan_networks(wifi_network_info_t *networks, size_t max_n
     
     ESP_LOGI(TAG, "Found %" PRIu16 " networks", num_ap);
     return ESP_OK;
+}
+
+/**
+ * Connect to strongest available network with band preference
+ */
+esp_err_t wifi_manager_connect_to_strongest(void) {
+    ESP_LOGI(TAG, "Scanning and connecting to strongest network with band preference");
+    
+    // First, stop current WiFi connection if any
+    esp_wifi_disconnect();
+    
+    // Set APSTA mode and start WiFi if not already started
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+    
+    // Try to start WiFi
+    esp_err_t err = esp_wifi_start();
+    if (err != ESP_OK && err == ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGE(TAG, "Failed to start WiFi: %s", esp_err_to_name(err));
+        return err;
+    }
+    
+    // Clear the status bits
+    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    
+    // Scan for networks - use maximum scan results (30 is a reasonable limit)
+    #define MAX_SCAN_RESULTS 30
+    wifi_network_info_t networks[MAX_SCAN_RESULTS];
+    size_t networks_found = 0;
+    
+    esp_err_t ret = wifi_manager_scan_networks(networks, MAX_SCAN_RESULTS, &networks_found);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to scan networks: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    if (networks_found == 0) {
+        ESP_LOGI(TAG, "No networks found");
+        return ESP_FAIL;
+    }
+    
+    // Get stored SSID to only connect to previously configured networks
+    nvs_handle_t nvs_handle;
+    char stored_ssid[WIFI_SSID_MAX_LENGTH + 1] = {0};
+    char stored_password[WIFI_PASSWORD_MAX_LENGTH + 1] = {0};
+    bool has_stored_credentials = false;
+    
+    if (nvs_open(WIFI_NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
+        size_t required_size = sizeof(stored_ssid);
+        if (nvs_get_str(nvs_handle, WIFI_NVS_KEY_SSID, stored_ssid, &required_size) == ESP_OK) {
+            // Also get the password
+            required_size = sizeof(stored_password);
+            nvs_get_str(nvs_handle, WIFI_NVS_KEY_PASSWORD, stored_password, &required_size);
+            has_stored_credentials = true;
+        }
+        nvs_close(nvs_handle);
+    }
+    
+    if (!has_stored_credentials) {
+        ESP_LOGI(TAG, "No stored WiFi credentials found, cannot connect to any network");
+        return ESP_FAIL;
+    }
+    
+    // Get band preference
+    uint8_t band_preference = wifi_manager_get_band_preference();
+    ESP_LOGI(TAG, "Band preference: %s", band_preference ? "5GHz preferred" : "No preference");
+    
+    // Find matching networks for our stored SSID
+    int best_5ghz_index = -1;
+    int best_5ghz_rssi = -128;
+    int best_2_4ghz_index = -1;
+    int best_2_4ghz_rssi = -128;
+    
+    for (int i = 0; i < networks_found; i++) {
+        // Only consider networks that match our stored SSID
+        if (strcmp(networks[i].ssid, stored_ssid) == 0) {
+            if (networks[i].band == WIFI_BAND_5GHZ) {
+                // 5GHz network
+                if (networks[i].rssi > best_5ghz_rssi) {
+                    best_5ghz_rssi = networks[i].rssi;
+                    best_5ghz_index = i;
+                }
+            } else {
+                // 2.4GHz network
+                if (networks[i].rssi > best_2_4ghz_rssi) {
+                    best_2_4ghz_rssi = networks[i].rssi;
+                    best_2_4ghz_index = i;
+                }
+            }
+        }
+    }
+    
+    // Determine which network to connect to based on band preference
+    int selected_index = -1;
+    
+    if (band_preference && best_5ghz_index != -1) {
+        // We prefer 5GHz and found a 5GHz network
+        if (best_5ghz_rssi >= WIFI_5GHZ_MIN_RSSI) {
+            // 5GHz signal is strong enough
+            selected_index = best_5ghz_index;
+            ESP_LOGI(TAG, "Selected 5GHz network with RSSI: %d", best_5ghz_rssi);
+        } else if (best_2_4ghz_index != -1) {
+            // 5GHz signal is weak, fall back to 2.4GHz if available
+            selected_index = best_2_4ghz_index;
+            ESP_LOGI(TAG, "5GHz signal too weak (RSSI: %d), falling back to 2.4GHz with RSSI: %d", 
+                    best_5ghz_rssi, best_2_4ghz_rssi);
+        } else {
+            // No 2.4GHz fallback, use weak 5GHz anyway
+            selected_index = best_5ghz_index;
+            ESP_LOGI(TAG, "Using weak 5GHz network (RSSI: %d) as no 2.4GHz alternative found", 
+                    best_5ghz_rssi);
+        }
+    } else if (best_5ghz_index != -1 && best_2_4ghz_index != -1) {
+        // No specific preference, choose the stronger signal
+        if (best_5ghz_rssi > best_2_4ghz_rssi) {
+            selected_index = best_5ghz_index;
+            ESP_LOGI(TAG, "Selected 5GHz network with stronger signal (RSSI: %d vs %d)", 
+                    best_5ghz_rssi, best_2_4ghz_rssi);
+        } else {
+            selected_index = best_2_4ghz_index;
+            ESP_LOGI(TAG, "Selected 2.4GHz network with stronger signal (RSSI: %d vs %d)", 
+                    best_2_4ghz_rssi, best_5ghz_rssi);
+        }
+    } else if (best_5ghz_index != -1) {
+        // Only found 5GHz
+        selected_index = best_5ghz_index;
+        ESP_LOGI(TAG, "Selected only available 5GHz network (RSSI: %d)", best_5ghz_rssi);
+    } else if (best_2_4ghz_index != -1) {
+        // Only found 2.4GHz
+        selected_index = best_2_4ghz_index;
+        ESP_LOGI(TAG, "Selected only available 2.4GHz network (RSSI: %d)", best_2_4ghz_rssi);
+    } else {
+        ESP_LOGI(TAG, "No matching networks found for SSID: %s", stored_ssid);
+        return ESP_FAIL;
+    }
+    
+    if (selected_index == -1) {
+        ESP_LOGI(TAG, "Failed to select a network");
+        return ESP_FAIL;
+    }
+    
+    // Connect to the selected network
+    ESP_LOGI(TAG, "Connecting to network: %s (Channel: %d, Band: %s, RSSI: %d)", 
+             networks[selected_index].ssid, 
+             networks[selected_index].channel,
+             networks[selected_index].band == WIFI_BAND_5GHZ ? "5GHz" : "2.4GHz",
+             networks[selected_index].rssi);
+    
+    // Configure WiFi station with the selected network
+    wifi_config_t wifi_sta_config = {0};
+    
+    strncpy((char*)wifi_sta_config.sta.ssid, networks[selected_index].ssid, sizeof(wifi_sta_config.sta.ssid));
+    strncpy((char*)wifi_sta_config.sta.password, stored_password, sizeof(wifi_sta_config.sta.password));
+    
+    // Update WiFi configuration
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config));
+    
+    // Connect to the network
+    ESP_ERROR_CHECK(esp_wifi_connect());
+    
+    // Update state
+    s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTING;
+    
+    // Wait for connection with timeout
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+                                        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+                                        pdFALSE,
+                                        pdFALSE,
+                                        pdMS_TO_TICKS(WIFI_CONNECTION_TIMEOUT_MS));
+    
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "Connected to network: %s", networks[selected_index].ssid);
+        s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTED;
+        return ESP_OK;
+    } else {
+        ESP_LOGI(TAG, "Failed to connect to network: %s", networks[selected_index].ssid);
+        return ESP_FAIL;
+    }
 }
 
 /**

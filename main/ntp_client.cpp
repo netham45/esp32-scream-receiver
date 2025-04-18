@@ -97,7 +97,7 @@ static time_t calculate_median_timestamp() {
 // DNS Header structure
 typedef struct {
     uint16_t id;        // identification number
-    uint16_t flags;     // DNS fl   ags
+    uint16_t flags;     // DNS flags
     uint16_t qdcount;   // number of question entries
     uint16_t ancount;   // number of answer entries
     uint16_t nscount;   // number of authority entries
