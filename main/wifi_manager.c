@@ -943,7 +943,7 @@ void wifi_manager_bss_rssi_low_handler(void* arg, esp_event_base_t event_base,
                                       int32_t event_id, void* event_data)
 {
     wifi_event_bss_rssi_low_t *event = event_data;
-    ESP_LOGI(TAG, "BSS RSSI is low: %d", event->rssi);
+    ESP_LOGI(TAG, "BSS RSSI is low: %" PRId32, event->rssi);
     
     // Check if RRM is supported
     if (esp_rrm_is_rrm_supported_connection()) {

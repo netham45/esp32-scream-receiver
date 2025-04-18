@@ -340,12 +340,8 @@ static void set_system_time(time_t time_value, int32_t microseconds, int32_t rou
         double network_jitter = calculate_network_jitter(ntp_history.round_trip_ms, ntp_history.count);
         int32_t median_round_trip = calculate_median_round_trip();
         
-        // Calculate one-way delay with microsecond precision
-        int64_t median_round_trip_us = (int64_t)median_round_trip * 1000LL; // Convert ms to us
-        int32_t one_way_delay_us = median_round_trip_us / 2; // Half of round trip time
-        
-        ESP_LOGI(TAG, "Detailed timing: median RTT: %d ms (%lld us), one-way delay: %d us", 
-                 median_round_trip, median_round_trip_us, one_way_delay_us);
+        // Adjust time for network delay (half of round trip time)
+        int32_t one_way_delay_us = (median_round_trip * 1000) / 2; // Convert ms to us and divide by 2
         
         // Adjust microseconds for one-way delay
         int32_t adjusted_microseconds = median_microseconds + one_way_delay_us;

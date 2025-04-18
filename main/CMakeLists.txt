@@ -17,4 +17,5 @@ idf_component_register(SRCS "mdns_service.c" "web_server.c" "wifi_manager.c" "au
                     INCLUDE_DIRS "."
                     EMBED_FILES ${WEB_FILES})
 
-target_link_libraries(${COMPONENT_LIB} "-L ${CMAKE_CURRENT_SOURCE_DIR}")
+# Enable C++ exceptions if not already enabled globally
+target_compile_options(${COMPONENT_LIB} PRIVATE "-fexceptions")
