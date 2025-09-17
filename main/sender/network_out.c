@@ -1,22 +1,27 @@
 #include <config.h>
-#ifdef IS_USB
-#include "scream_sender.h"
-#include "config_manager.h"
+#include "network_out.h"
+#include "config/config_manager.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "usb_device_uac.h"
+#include "freertos/ringbuf.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include <lwip/netdb.h>
 #include <string.h>
 #include <math.h>
 #include "esp_rom_sys.h" // For ets_delay_us
+#include "rom/ets_sys.h"
+#ifdef IS_SPDIF
+#include "spdif_in/spdif_in.h"
+#endif
+#ifdef IS_USB
+#include "usb_device_uac.h"
+#endif
 
-#define TAG "scream_sender"
-
+extern RingbufHandle_t pcm_buffer;
 // Scream header for 16-bit 48KHz stereo audio
 static const char header[] = {1, 16, 2, 0, 0};
 #define HEADER_SIZE sizeof(header)
@@ -24,7 +29,7 @@ static const char header[] = {1, 16, 2, 0, 0};
 #define PACKET_SIZE (CHUNK_SIZE + HEADER_SIZE)
 
 // Socket options
-#define UDP_TX_BUFFER_SIZE (1024 * 32)
+#define UDP_TX_BUFFER_SIZE (1152 * 4)
 #define UDP_SEND_TIMEOUT_MS 10
 #define MAX_SEND_RETRIES 3
 
@@ -35,68 +40,23 @@ static bool s_is_muted = false;
 static uint32_t s_volume = 100;
 static int s_sock = -1;
 static struct sockaddr_in s_dest_addr;
+static TaskHandle_t s_sender_task_handle = NULL;
 
 // Buffer for audio data
 static char s_data_out[PACKET_SIZE];
-static char s_data_in[CHUNK_SIZE * 16]; // Increased buffer size
-static int s_data_in_head = 0;
+static RingbufHandle_t s_usb_rb = NULL;
 
+static void scream_sender_task(void *arg);
+#ifdef IS_USB
 // UAC callbacks
 static esp_err_t uac_device_output_cb(uint8_t *buf, size_t len, void *arg)
 {
-    if (s_is_muted || !s_is_sender_running)
+    if (s_is_muted || !s_is_sender_running || s_usb_rb == NULL) {
         return ESP_OK;
-    
-    // Copy the received data to our buffer
-    memcpy(s_data_in + s_data_in_head, buf, len);
-    s_data_in_head += len;
-    
-    // Process the data in chunks
-    while (s_data_in_head >= CHUNK_SIZE) {
-        // Get volume from config manager
-        app_config_t *config = config_manager_get_config();
-        float volume = config->volume;
-        
-        if (volume < 1.0f) {
-            // Apply volume scaling for 16-bit PCM audio
-            int16_t *samples = (int16_t*)s_data_in;
-            int num_samples = CHUNK_SIZE / 2; // 2 bytes per sample for 16-bit audio
-            
-            for (int i = 0; i < num_samples; i++) {
-                samples[i] = (int16_t)(samples[i] * volume);
-            }
-        }
-        
-        memcpy(s_data_out + HEADER_SIZE, s_data_in, CHUNK_SIZE);
-        
-        // Send with retry logic
-        int sent = -1;
-        int retry_count = 0;
-        
-        while (sent < 0 && retry_count < MAX_SEND_RETRIES) {
-            sent = sendto(s_sock, s_data_out, PACKET_SIZE, 0, 
-                         (struct sockaddr *)&s_dest_addr, sizeof(s_dest_addr));
-                         
-            if (sent < 0) {
-                ESP_LOGW(TAG, "Failed to send UDP packet: errno %d, retry %d", 
-                         errno, retry_count + 1);
-                retry_count++;
-                
-                // Small delay before retry (500 microseconds)
-                esp_rom_delay_us(500);
-            } else if (sent != PACKET_SIZE) {
-                ESP_LOGW(TAG, "Incomplete UDP packet sent: %d of %d bytes", 
-                         sent, PACKET_SIZE);
-            }
-        }
-        
-        // Move remaining data to the beginning of the buffer
-        s_data_in_head -= CHUNK_SIZE;
-        if (s_data_in_head > 0) {
-            memmove(s_data_in, s_data_in + CHUNK_SIZE, s_data_in_head);
-        }
     }
     
+    // Copy data to the ring buffer
+    xRingbufferSend(s_usb_rb, buf, len, pdMS_TO_TICKS(10));
     return ESP_OK;
 }
 
@@ -137,6 +97,7 @@ static void uac_device_set_volume_cb(uint32_t volume, void *arg)
     
     ESP_LOGI(TAG, "Config volume updated to %.2f", config_volume);
 }
+#endif
 
 esp_err_t scream_sender_init(void)
 {
@@ -156,12 +117,6 @@ esp_err_t scream_sender_init(void)
     
     // Configure socket options for better reliability
     int opt_val;
-    
-    // Increase send buffer size
-    opt_val = UDP_TX_BUFFER_SIZE;
-    if (setsockopt(s_sock, SOL_SOCKET, SO_SNDBUF, &opt_val, sizeof(opt_val)) < 0) {
-        ESP_LOGW(TAG, "Failed to set SO_SNDBUF: errno %d", errno);
-    }
     
     // Set timeout to prevent blocking too long on send
     struct timeval timeout;
@@ -189,7 +144,7 @@ esp_err_t scream_sender_init(void)
     
     // Initialize the Scream header in output buffer
     memcpy(s_data_out, header, HEADER_SIZE);
-    
+    #ifdef IS_USB
     // Initialize the UAC device
     uac_device_config_t uac_config = {
         .output_cb = uac_device_output_cb,
@@ -206,6 +161,16 @@ esp_err_t scream_sender_init(void)
         return ret;
     }
     
+    // Create a ring buffer for USB audio data
+    s_usb_rb = xRingbufferCreate(CHUNK_SIZE * 8, RINGBUF_TYPE_BYTEBUF);
+    if (s_usb_rb == NULL) {
+        ESP_LOGE(TAG, "Failed to create USB ring buffer");
+        close(s_sock);
+        s_sock = -1;
+        return ESP_FAIL;
+    }
+
+    #endif
     s_is_sender_initialized = true;
     return ESP_OK;
 }
@@ -224,10 +189,11 @@ esp_err_t scream_sender_start(void)
     
     ESP_LOGI(TAG, "Starting Scream sender");
     
-    // Reset the data buffer
-    s_data_in_head = 0;
-    
     s_is_sender_running = true;
+
+    // Create the sender task
+    xTaskCreatePinnedToCore(scream_sender_task, "scream_sender_task", 16384, NULL, 5, &s_sender_task_handle, 1);
+    
     return ESP_OK;
 }
 
@@ -246,6 +212,13 @@ esp_err_t scream_sender_stop(void)
     ESP_LOGI(TAG, "Stopping Scream sender");
     
     s_is_sender_running = false;
+
+    // Stop and delete the sender task
+    if (s_sender_task_handle) {
+        vTaskDelete(s_sender_task_handle);
+        s_sender_task_handle = NULL;
+    }
+
     return ESP_OK;
 }
 
@@ -289,4 +262,99 @@ esp_err_t scream_sender_update_destination(void)
     
     return ESP_OK;
 }
+
+static void scream_sender_task(void *arg)
+{
+    app_config_t *config = config_manager_get_config();
+    char audio_buffer[CHUNK_SIZE];
+    size_t bytes_in_buffer = 0;
+
+    // For pacing the sender to match the audio rate
+    TickType_t xLastWakeTime;
+    // 1152 bytes per chunk / (48000 samples/sec * 2 channels * 2 bytes/sample) = 6ms per chunk
+    const TickType_t xFrequency = pdMS_TO_TICKS(3);
+    xLastWakeTime = xTaskGetTickCount();
+
+    while (s_is_sender_running) {
+        if (s_is_muted) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            bytes_in_buffer = 0; // Reset buffer when muted
+            continue;
+        }
+
+        // We need to fill the buffer completely before sending
+        if (bytes_in_buffer < CHUNK_SIZE) {
+            size_t bytes_to_read = CHUNK_SIZE - bytes_in_buffer;
+            int bytes_read = 0;
+
+#ifdef IS_USB
+            size_t item_size;
+            // Try to receive up to bytes_to_read from the ring buffer
+            uint8_t *item = (uint8_t *)xRingbufferReceiveUpTo(s_usb_rb, &item_size, pdMS_TO_TICKS(1), bytes_to_read);
+            if (item != NULL) {
+                memcpy((uint8_t*)audio_buffer + bytes_in_buffer, item, item_size);
+                bytes_read = item_size;
+                vRingbufferReturnItem(s_usb_rb, (void *)item);
+            }
+#else // IS_SPDIF or other
+            if (!pcm_buffer) {
+                vTaskDelay(0);
+                continue;
+            }
+            size_t item_size;
+            uint8_t *item = (uint8_t *)xRingbufferReceiveUpTo(pcm_buffer, &item_size, pdMS_TO_TICKS(1), bytes_to_read);
+            if (item != NULL) {
+                memcpy((uint8_t*)audio_buffer + bytes_in_buffer, item, item_size);
+                bytes_read = item_size;
+                vRingbufferReturnItem(pcm_buffer, (void *)item);
+            } else {
+                bytes_read = 0;
+            }
 #endif
+
+            if (bytes_read > 0) {
+                bytes_in_buffer += bytes_read;
+            } else {
+                // No data, wait a bit to avoid busy-looping
+                vTaskDelay(pdMS_TO_TICKS(1));
+                continue;
+            }
+        }
+
+        // If we have a full chunk, send it
+        if (bytes_in_buffer == CHUNK_SIZE) {
+            // Apply volume
+            float volume = config->volume;
+            if (volume < 1.0f) {
+                int16_t *samples = (int16_t*)audio_buffer;
+                int num_samples = CHUNK_SIZE / 2;
+                for (int i = 0; i < num_samples; i++) {
+                    samples[i] = (int16_t)(samples[i] * volume);
+                }
+            }
+
+            // Prepare packet and send
+            memcpy(s_data_out + HEADER_SIZE, audio_buffer, CHUNK_SIZE);
+
+            int sent = -1;
+            int retry_count = 0;
+            while (sent < 0 && retry_count < MAX_SEND_RETRIES) {
+                sent = sendto(s_sock, s_data_out, PACKET_SIZE, 0,
+                             (struct sockaddr *)&s_dest_addr, sizeof(s_dest_addr));
+               if (sent > 0) {
+                   //ESP_LOGI(TAG, "Sent %d bytes to network", sent);
+               } else {
+                   ESP_LOGW(TAG, "Failed to send UDP packet: errno %d, retry %d", errno, retry_count + 1);
+                   retry_count++;
+                   ets_delay_us(2000);
+               }
+            }
+
+            // Reset buffer for next chunk
+            bytes_in_buffer = 0;
+            // Pace the sender to match the audio data rate. This prevents sending bursts of packets
+            // that can overwhelm the network stack and cause ENOMEM (errno 12) errors.
+            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+        }
+    }
+}

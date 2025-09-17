@@ -1,7 +1,8 @@
 #include "esp_wifi.h"                    // ESP IDF
 #include "global.h"
 #include "buffer.h"
-#include "config_manager.h"             // Added for configuration
+#include "config/config_manager.h"             // Added for configuration
+#include "lifecycle_manager.h"
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -24,13 +25,9 @@
 #include <arpa/inet.h>
 #include <sys/select.h>       // Added for select()
 #include "esp_netif.h"
-#include "audio.h"
-#include "wifi_manager.h"
+#include "audio_out.h"
+#include "wifi/wifi_manager.h"
 
-// Reference to sleep mode monitoring variables
-extern volatile uint32_t packet_counter;
-extern volatile bool monitoring_active;
-extern volatile TickType_t last_packet_time;
 
 const uint16_t HEADER_SIZE = 5;                         // Scream Header byte size, non-configurable (Part of Scream)
 const uint16_t PACKET_SIZE = PCM_CHUNK_SIZE + HEADER_SIZE;
@@ -118,13 +115,8 @@ void tcp_handler(void *) {
 	datahead += result;
 	
 	// Track packet reception for activity detection during sleep mode
-	if (result > 0 && monitoring_active) {
-	    packet_counter++;
-	    last_packet_time = xTaskGetTickCount(); // Update last packet time
-        // Signal the network monitor task that a packet was received
-        if (s_network_activity_event_group != NULL) {
-            xEventGroupSetBits(s_network_activity_event_group, NETWORK_PACKET_RECEIVED_BIT);
-        }
+	if (result > 0) {
+	       lifecycle_manager_report_network_activity();
 	}
 	
 	if (datahead >= PACKET_SIZE) {
@@ -132,8 +124,8 @@ void tcp_handler(void *) {
 	    if (config->use_direct_write) {
 		    audio_direct_write(data + HEADER_SIZE);
 	    } else {
-		    //push_chunk(data + HEADER_SIZE);
-            audio_direct_write(data + HEADER_SIZE);
+		    push_chunk(data + HEADER_SIZE);
+            //audio_direct_write(data + HEADER_SIZE);
 	    }
 		memcpy(data, data + PACKET_SIZE, PACKET_SIZE);
 		datahead -= PACKET_SIZE;
@@ -142,7 +134,7 @@ void tcp_handler(void *) {
   }
   close(sock);
   stop_playback();
-  xTaskCreatePinnedToCore(udp_handler, "udp_handler", 8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(udp_handler, "udp_handler", 8192, NULL, 1, NULL, 0);
   vTaskDelete(NULL);
 }
 
@@ -225,15 +217,8 @@ void udp_handler(void *) {
             }
 
 			// Track packet reception for activity detection during sleep mode
-			if (result > 0 && monitoring_active) {
-			    packet_counter++;
-			    last_packet_time = xTaskGetTickCount(); // Update last packet time
-                // Signal the network monitor task that a packet was received
-                if (s_network_activity_event_group != NULL) {
-                    xEventGroupSetBits(s_network_activity_event_group, NETWORK_PACKET_RECEIVED_BIT);
-                }
-			    // If we're in sleep mode and detected sufficient activity,
-			    // this will be handled by the monitor task
+			if (result > 0) {
+			             lifecycle_manager_report_network_activity();
 			}
 			
 			if (result && use_tcp) {
@@ -241,7 +226,7 @@ void udp_handler(void *) {
 				socklen_t addrlen = sizeof(struct sockaddr_in);
 				recvfrom(sock, data + datahead, PACKET_SIZE, 0, (struct sockaddr *)&addr, &addrlen);
 				strcpy(server, inet_ntoa(addr.sin_addr));
-				xTaskCreatePinnedToCore(tcp_handler, "tcp_handler", 8192, NULL, 1, NULL, 1);
+				xTaskCreatePinnedToCore(tcp_handler, "tcp_handler", 8192, NULL, 1, NULL, 0);
 				close(sock);
 				stop_playback();
 				vTaskDelete(NULL);
@@ -253,8 +238,8 @@ void udp_handler(void *) {
 			    if (config->use_direct_write) {
 				    audio_direct_write(data + HEADER_SIZE);
 			    } else {
-				    //push_chunk(data + HEADER_SIZE);
-                    audio_direct_write(data + HEADER_SIZE);
+				    push_chunk(data + HEADER_SIZE);
+                    //audio_direct_write(data + HEADER_SIZE);
 			    }
 				memcpy(data,data + PACKET_SIZE, PACKET_SIZE);
 				datahead -= PACKET_SIZE;
@@ -273,7 +258,7 @@ void udp_handler(void *) {
 }
 
 void setup_network() {
-  xTaskCreatePinnedToCore(udp_handler, "udp_handler", 8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(udp_handler, "udp_handler", 8192, NULL, 1, NULL, 0);
 }	
 
 void restart_network() {

@@ -12,14 +12,21 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('network-list').innerHTML = '<div style="padding: 15px; text-align: center;">Click "Scan" to search for WiFi networks</div>';
     
     // Add event listener to toggle visibility of sender options
-    const enableSenderCheckbox = document.getElementById('enable_usb_sender');
-    if (enableSenderCheckbox) {
-        enableSenderCheckbox.addEventListener('change', updateSenderOptionsVisibility);
+    const usbSenderCheckbox = document.getElementById('enable_usb_sender');
+    if (usbSenderCheckbox) {
+        usbSenderCheckbox.addEventListener('change', updateSenderOptionsVisibility);
+    }
+    const spdifSenderCheckbox = document.getElementById('enable_spdif_sender');
+    if (spdifSenderCheckbox) {
+        spdifSenderCheckbox.addEventListener('change', updateSenderOptionsVisibility);
     }
 });
 
 function updateSenderOptionsVisibility() {
-    const isEnabled = document.getElementById('enable_usb_sender').checked;
+    const usbEnabled = document.getElementById('enable_usb_sender') ? document.getElementById('enable_usb_sender').checked : false;
+    const spdifEnabled = document.getElementById('enable_spdif_sender') ? document.getElementById('enable_spdif_sender').checked : false;
+    const isEnabled = usbEnabled || spdifEnabled;
+    
     const senderOptions = document.querySelectorAll('.sender-option');
     
     senderOptions.forEach(option => {
@@ -78,15 +85,18 @@ function loadSettings() {
                 document.getElementById('spdif_data_pin').value = settings.spdif_data_pin;
             }
             
-            // USB Sender settings (only if elements exist)
+            // Sender settings
             if (document.getElementById('enable_usb_sender')) {
                 document.getElementById('enable_usb_sender').checked = settings.enable_usb_sender;
-                document.getElementById('sender_destination_ip').value = settings.sender_destination_ip || '192.168.1.255';
-                document.getElementById('sender_destination_port').value = settings.sender_destination_port || 4010;
-                
-                // Update visibility of sender options
-                updateSenderOptionsVisibility();
             }
+            if (document.getElementById('enable_spdif_sender')) {
+                document.getElementById('enable_spdif_sender').checked = settings.enable_spdif_sender;
+            }
+            document.getElementById('sender_destination_ip').value = settings.sender_destination_ip || '192.168.1.255';
+            document.getElementById('sender_destination_port').value = settings.sender_destination_port || 4010;
+            
+            // Update visibility of sender options
+            updateSenderOptionsVisibility();
             
             // Sleep settings
             document.getElementById('silence_threshold_ms').value = settings.silence_threshold_ms;
@@ -127,9 +137,12 @@ function saveSettings(event) {
     settings.hide_ap_when_connected = document.getElementById('hide_ap_when_connected').checked;
     settings.use_direct_write = document.getElementById('use_direct_write').checked;
     
-    // Handle USB Sender checkbox (only exists in USB mode)
+    // Handle Sender checkboxes
     if (document.getElementById('enable_usb_sender')) {
         settings.enable_usb_sender = document.getElementById('enable_usb_sender').checked;
+    }
+    if (document.getElementById('enable_spdif_sender')) {
+        settings.enable_spdif_sender = document.getElementById('enable_spdif_sender').checked;
     }
     
     fetch('/api/settings', {

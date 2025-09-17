@@ -10,7 +10,7 @@
 #include "esp_log.h"
 #include "esp_err.h"
 
-#include "config_manager.h"
+#include "config/config_manager.h"
 #include "config.h"
 
 #define TAG "spdif"
@@ -18,6 +18,7 @@
 // Get SPDIF pin from config
 static uint8_t get_spdif_pin(void)
 {
+    return 4;
     app_config_t *config = config_manager_get_config();
     return config->spdif_data_pin;
 }

@@ -5,11 +5,11 @@
 // Number of chunks to be buffered before playback starts, configurable
 #define INITIAL_BUFFER_SIZE 4
 // Number of chunks to add each underflow, configurable
-#define BUFFER_GROW_STEP_SIZE 0
+#define BUFFER_GROW_STEP_SIZE 2
 // Max number of chunks to be buffered before packets are dropped, configurable
-#define  MAX_BUFFER_SIZE 16
+#define  MAX_BUFFER_SIZE 24
 // Max number of chunks to be targeted for buffer
-#define MAX_GROW_SIZE 4
+#define MAX_GROW_SIZE 16
 
 // Sample rate for incoming PCM, configurable
 #define SAMPLE_RATE 48000
@@ -29,7 +29,7 @@
 #define NETWORK_INACTIVITY_TIMEOUT_MS 5000 // Enter sleep mode after no packets for 5 seconds
 
 
-//#define IS_SPDIF
-#define IS_USB
+#define IS_SPDIF
+//#define IS_USB
 
 #define TAG "scream_receiver"

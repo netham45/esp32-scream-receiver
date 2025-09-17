@@ -1,4 +1,9 @@
 dependencies:
+  cherry-embedded/cherryusb:
+    component_hash: ec3fda70779076a4a996abc52684fcafe4c61b269b722b775562f96c042c08f6
+    source:
+      type: service
+    version: 1.5.2~2
   espressif/cmake_utilities:
     component_hash: 05165f30922b422b4b90c08845e6d449329b97370fbd06309803d8cb539d79e3
     source:
@@ -15,10 +20,9 @@ dependencies:
       type: service
     version: 0.2.0
   espressif/usb_host_uac:
-    component_hash: null
+    component_hash: 6bcac5e817b87e6d089574f2280d35eef2e761e387b667909c158238358d2a14
     source:
-      path: C:\Users\Nathan\Documents\GitHub\esp32-scream-receiver\components\espressif__usb_host_uac
-      type: local
+      type: service
     version: 1.0.0
   idf:
     component_hash: null
@@ -30,6 +34,6 @@ dependencies:
     source:
       type: service
     version: 0.16.0~6
-manifest_hash: 8b7f3c6676e867d0b4320fade059555b4ccf46ac92a47f8d7262080845cc4a87
+manifest_hash: b9262aff480cf223a6b2399dff6d00825047caf2a652d7f3ee1f269463edb136
 target: esp32s3
 version: 1.0.0

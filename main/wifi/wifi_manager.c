@@ -8,13 +8,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
-#include "config_manager.h"
+#include "config/config_manager.h"
 #include "esp_wnm.h"
 #include "esp_rrm.h"
 #include "esp_mbo.h"
 #include "esp_mac.h"
 #include <string.h>
 #include <inttypes.h>
+#include "lifecycle_manager.h"
 
 static const char *TAG = "wifi_manager";
 
@@ -103,6 +104,9 @@ static esp_err_t start_ap_mode(void);
 esp_err_t wifi_manager_init(void) {
     ESP_LOGI(TAG, "Initializing WiFi manager");
     
+    // Suppress WiFi driver warning logs (like "exceed max band")
+    esp_log_level_set("wifi", ESP_LOG_ERROR);
+    
     // Check if already initialized
     if (s_wifi_manager_state != WIFI_MANAGER_STATE_NOT_INITIALIZED) {
         ESP_LOGW(TAG, "WiFi manager already initialized");
@@ -185,6 +189,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             }
         } else if (event_id == WIFI_EVENT_STA_DISCONNECTED) {
             wifi_event_sta_disconnected_t *disconn = event_data;
+            lifecycle_manager_post_event(LIFECYCLE_EVENT_WIFI_DISCONNECTED);
             
             // Re-enable AP mode if it was hidden while connected
             app_config_t* config = config_manager_get_config();
@@ -238,6 +243,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
             s_retry_num = 0;
             xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
             s_wifi_manager_state = WIFI_MANAGER_STATE_CONNECTED;
+            lifecycle_manager_post_event(LIFECYCLE_EVENT_WIFI_CONNECTED);
             
             // If configured to hide AP when connected, disable AP interface
             app_config_t* config = config_manager_get_config();

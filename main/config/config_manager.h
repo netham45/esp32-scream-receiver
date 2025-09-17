@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "esp_err.h"
-#include "wifi_manager.h" // For WIFI_PASSWORD_MAX_LENGTH
+#include "wifi/wifi_manager.h" // For WIFI_PASSWORD_MAX_LENGTH
 
 // NVS namespace for storing configuration
 #define CONFIG_NVS_NAMESPACE "app_config"
@@ -38,6 +38,7 @@ typedef struct {
     
     // USB Scream Sender configuration
     bool enable_usb_sender;                // Enable USB Scream Sender functionality
+    bool enable_spdif_sender;              // Enable S/PDIF Scream Sender functionality
     char sender_destination_ip[16];        // Destination IP for audio packets
     uint16_t sender_destination_port;      // Destination port for audio packets
     
@@ -62,3 +63,6 @@ esp_err_t config_manager_save_setting(const char* key, void* value, size_t size)
 
 // Reset configuration to defaults
 esp_err_t config_manager_reset(void);
+
+// Reload configuration from NVS
+esp_err_t config_manager_reload(void);

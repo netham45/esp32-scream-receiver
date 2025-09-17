@@ -1,12 +1,13 @@
 #include "global.h"
 #include "buffer.h"
-#include "config_manager.h"
+#include "config/config_manager.h"
+#include "lifecycle_manager.h"
 #include "freertos/FreeRTOS.h"
 #include <inttypes.h>
 #include "freertos/task.h"
 #include "esp_log.h"
 #ifdef IS_SPDIF
-#include "spdif.h"
+#include "spdif_out.h"
 #endif
 #ifdef IS_USB
 #include "usb/uac_host.h"
@@ -21,8 +22,6 @@ bool is_silent = false;
 uint32_t silence_duration_ms = 0;
 TickType_t last_audio_time = 0;
 
-// Forward declaration of the sleep function we'll define in usb_audio_player_main.c
-extern void enter_silence_sleep_mode();
 
 bool is_playing() {
   return playing;
@@ -145,7 +144,7 @@ void pcm_handler(void*) {
                             silence_duration_ms);
                     
                     // Trigger sleep mode
-                    enter_silence_sleep_mode();
+                    lifecycle_manager_post_event(LIFECYCLE_EVENT_ENTER_SLEEP);
                 }
               } else {
                 ESP_LOGI(TAG, "Absurd silence threshold ignored (%" PRIu32 " ms)", 

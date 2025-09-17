@@ -31,6 +31,9 @@ static app_config_t s_app_config;
 #define NVS_KEY_SENDER_DEST_IP "sender_ip"
 #define NVS_KEY_SENDER_DEST_PORT "sender_port"
 
+// S/PDIF Scream Sender key
+#define NVS_KEY_ENABLE_SPDIF_SENDER "spdif_sender"
+
 // WiFi roaming keys
 #define NVS_KEY_RSSI_THRESHOLD "rssi_thresh"
 
@@ -53,7 +56,7 @@ static void set_default_config(void) {
     s_app_config.sample_rate = SAMPLE_RATE;
     s_app_config.bit_depth = BIT_DEPTH;
     s_app_config.volume = VOLUME;
-    s_app_config.spdif_data_pin = 16; // Default SPDIF pin for ESP32-S3
+    s_app_config.spdif_data_pin = 17; // Default SPDIF pin
     s_app_config.silence_threshold_ms = SILENCE_THRESHOLD_MS;
     s_app_config.network_check_interval_ms = NETWORK_CHECK_INTERVAL_MS;
     s_app_config.activity_threshold_packets = ACTIVITY_THRESHOLD_PACKETS;
@@ -62,6 +65,7 @@ static void set_default_config(void) {
     
     // USB Scream Sender defaults
     s_app_config.enable_usb_sender = false;
+    s_app_config.enable_spdif_sender = false; // Default S/PDIF sender to disabled
     strcpy(s_app_config.sender_destination_ip, "192.168.1.255"); // Default to broadcast
     s_app_config.sender_destination_port = 4010; // Default Scream port
     
@@ -205,6 +209,13 @@ esp_err_t config_manager_init(void) {
         s_app_config.enable_usb_sender = (bool)u8_value;
     }
     
+    // Read S/PDIF Scream Sender setting
+    err = nvs_get_u8(nvs_handle, NVS_KEY_ENABLE_SPDIF_SENDER, &u8_value);
+    if (err == ESP_OK) {
+        s_app_config.enable_spdif_sender = (bool)u8_value;
+        ESP_LOGI(TAG, "Loaded enable_spdif_sender: %d", s_app_config.enable_spdif_sender);
+    }
+    
     char ip_str[16];
     size_t ip_len = sizeof(ip_str);
     err = nvs_get_str(nvs_handle, NVS_KEY_SENDER_DEST_IP, ip_str, &ip_len);
@@ -246,7 +257,29 @@ app_config_t* config_manager_get_config(void) {
 }
 
 /**
- * Save the entire configuration to NVS
+ * Reload configuration from NVS
+ */
+esp_err_t config_manager_reload(void) {
+    ESP_LOGI(TAG, "Reloading configuration from NVS");
+    
+    // Store current values in case we need to fall back
+    app_config_t backup_config = s_app_config;
+    
+    // Try to load all settings from NVS
+    esp_err_t err = config_manager_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to reload configuration: %s", esp_err_to_name(err));
+        // Restore previous values
+        s_app_config = backup_config;
+        return err;
+    }
+    
+    ESP_LOGI(TAG, "Configuration reloaded successfully");
+    return ESP_OK;
+}
+
+/**
+ * Save configuration to NVS
  */
 esp_err_t config_manager_save_config(void) {
     ESP_LOGI(TAG, "Saving configuration to NVS");
@@ -398,6 +431,15 @@ esp_err_t config_manager_save_config(void) {
         return err;
     }
     
+    // Save S/PDIF Scream Sender setting
+    err = nvs_set_u8(nvs_handle, NVS_KEY_ENABLE_SPDIF_SENDER, (uint8_t)s_app_config.enable_spdif_sender);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving S/PDIF sender enable: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    ESP_LOGI(TAG, "Saved enable_spdif_sender: %d", s_app_config.enable_spdif_sender);
+    
     err = nvs_set_str(nvs_handle, NVS_KEY_SENDER_DEST_IP, s_app_config.sender_destination_ip);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Error saving sender destination IP: %s", esp_err_to_name(err));
@@ -419,6 +461,15 @@ esp_err_t config_manager_save_config(void) {
         nvs_close(nvs_handle);
         return err;
     }
+
+    // Save direct write setting
+    err = nvs_set_u8(nvs_handle, NVS_KEY_USE_DIRECT_WRITE, (uint8_t)s_app_config.use_direct_write);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error saving direct write setting: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    ESP_LOGI(TAG, "Saved direct write setting: %d", s_app_config.use_direct_write);
     
     // Commit the changes
     err = nvs_commit(nvs_handle);
@@ -428,10 +479,28 @@ esp_err_t config_manager_save_config(void) {
         return err;
     }
     
+    // Verify the save by reading back the value
+    uint8_t saved_value;
+    err = nvs_get_u8(nvs_handle, NVS_KEY_USE_DIRECT_WRITE, &saved_value);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Error verifying direct write setting: %s", esp_err_to_name(err));
+        nvs_close(nvs_handle);
+        return err;
+    }
+    
+    if (saved_value != (uint8_t)s_app_config.use_direct_write) {
+        ESP_LOGE(TAG, "Direct write setting verification failed: saved=%d, expected=%d", 
+                 saved_value, (uint8_t)s_app_config.use_direct_write);
+        nvs_close(nvs_handle);
+        return ESP_FAIL;
+    }
+    
+    ESP_LOGI(TAG, "Direct write setting verified: %d", saved_value);
+    
     // Close NVS handle
     nvs_close(nvs_handle);
     
-    ESP_LOGI(TAG, "Configuration saved successfully");
+    ESP_LOGI(TAG, "Configuration saved and verified successfully");
     return ESP_OK;
 }
 
@@ -513,6 +582,10 @@ esp_err_t config_manager_save_setting(const char* key, void* value, size_t size)
     } else if (strcmp(key, NVS_KEY_ENABLE_USB_SENDER) == 0 && size == sizeof(bool)) {
         s_app_config.enable_usb_sender = *(bool*)value;
         err = nvs_set_u8(nvs_handle, key, (uint8_t)s_app_config.enable_usb_sender);
+    } else if (strcmp(key, NVS_KEY_ENABLE_SPDIF_SENDER) == 0 && size == sizeof(bool)) {
+        s_app_config.enable_spdif_sender = *(bool*)value;
+        err = nvs_set_u8(nvs_handle, key, (uint8_t)s_app_config.enable_spdif_sender);
+        ESP_LOGI(TAG, "Updating enable_spdif_sender to: %d", s_app_config.enable_spdif_sender);
     } else if (strcmp(key, NVS_KEY_SENDER_DEST_IP) == 0) {
         strncpy(s_app_config.sender_destination_ip, (char*)value, 15);
         s_app_config.sender_destination_ip[15] = '\0'; // Ensure null termination

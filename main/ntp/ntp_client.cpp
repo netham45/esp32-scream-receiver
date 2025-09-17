@@ -24,8 +24,8 @@
 #define NTP_SERVER_PORT 123
 #define QUERY_TARGET "screamrouter.local"
 #define NTP_HISTORY_SIZE 25 // Store last 25 results
-#define NTP_POLL_INTERVAL_MS 5000 // Poll every 5 seconds
-#define NTP_FAST_POLL_INTERVAL_MS 500 // Poll every 0.5 seconds when building initial samples
+#define NTP_POLL_INTERVAL_MS 500 // Poll every .5 seconds
+#define NTP_FAST_POLL_INTERVAL_MS 50 // Poll every 0.05 seconds when building initial samples
 #define MAX_FAILURE_COUNT 3 // Maximum number of consecutive failures before invalidating the cache
 
 static const char *TAG = "ntp_client";
@@ -334,13 +334,13 @@ static int32_t calculate_median_round_trip() {
     
     // If we filtered out too many, fall back to original
     if (filtered_count < 3 && ntp_history.count >= 3) {
-        ESP_LOGW(TAG, "Too many RTT outliers filtered (%d/%d), using original data", 
-                 ntp_history.count - filtered_count, ntp_history.count);
+        //ESP_LOGW(TAG, "Too many RTT outliers filtered (%d/%d), using original data", 
+                 //ntp_history.count - filtered_count, ntp_history.count);
         filtered_count = ntp_history.count;
         memcpy(filtered, temp, ntp_history.count * sizeof(int32_t));
     } else if (filtered_count < ntp_history.count) {
-        ESP_LOGI(TAG, "Filtered %d/%d RTT outliers (bounds: [%" PRId32 ", %" PRId32 "] ms)", 
-                 ntp_history.count - filtered_count, ntp_history.count, lower_bound, upper_bound);
+        //ESP_LOGI(TAG, "Filtered %d/%d RTT outliers (bounds: [%" PRId32 ", %" PRId32 "] ms)", 
+                 //ntp_history.count - filtered_count, ntp_history.count, lower_bound, upper_bound);
     }
     
     // Sort the filtered array
@@ -391,15 +391,15 @@ static void set_system_time(time_t time_value, int32_t microseconds, int32_t rou
         
         struct timeval now = { .tv_sec = adjusted_time, .tv_usec = adjusted_microseconds };
         settimeofday(&now, NULL);
-        ESP_LOGI(TAG, "System time set: %lld.%06" PRId32 " (using latest sample, adjusted for network delay)", 
-                 (long long)adjusted_time, adjusted_microseconds);
-        ESP_LOGI(TAG, "Time jitter: %.6f seconds, range: %lld seconds (min: %lld, max: %lld)", 
-                 time_jitter, (long long)range, (long long)min_time, (long long)max_time);
-        ESP_LOGI(TAG, "Network stats: median RTT: %" PRId32 " ms, one-way delay: %" PRId32 " us, network jitter: %.3f ms", 
-                 median_round_trip, one_way_delay_us, network_jitter);
+        //ESP_LOGI(TAG, "System time set: %lld.%06" PRId32 " (using latest sample, adjusted for network delay)", 
+                 //(long long)adjusted_time, adjusted_microseconds);
+        //ESP_LOGI(TAG, "Time jitter: %.6f seconds, range: %lld seconds (min: %lld, max: %lld)", 
+                 //time_jitter, (long long)range, (long long)min_time, (long long)max_time);
+        //ESP_LOGI(TAG, "Network stats: median RTT: %" PRId32 " ms, one-way delay: %" PRId32 " us, network jitter: %.3f ms", 
+                 //median_round_trip, one_way_delay_us, network_jitter);
     } else {
-                ESP_LOGI(TAG, "Added timestamp to history (%d/%" PRId32 " samples needed for jitter calculation)", 
-                         ntp_history.count, (int32_t)NTP_HISTORY_SIZE);
+                //ESP_LOGI(TAG, "Added timestamp to history (%d/%" PRId32 " samples needed for jitter calculation)", 
+                   //      ntp_history.count, (int32_t)NTP_HISTORY_SIZE);
     }
 }
 
@@ -425,11 +425,11 @@ static void ntp_client_task(void *pvParameters) {
         if (dns_cache.valid) {
             // Use cached IP address
             strncpy(ntp_server_address, dns_cache.ip_address, sizeof(ntp_server_address));
-            ESP_LOGI(TAG, "Using cached DNS result: %s", ntp_server_address);
+            //ESP_LOGI(TAG, "Using cached DNS result: %s", ntp_server_address);
             ip_found = true;
         } else {
             // --- DNS Query ---
-            ESP_LOGI(TAG, "Attempting DNS query for %s to %s:%" PRId32, QUERY_TARGET, DNS_MULTICAST_IPV4_ADDRESS, (int32_t)DNS_MULTICAST_PORT);
+            //ESP_LOGI(TAG, "Attempting DNS query for %s to %s:%" PRId32, QUERY_TARGET, DNS_MULTICAST_IPV4_ADDRESS, (int32_t)DNS_MULTICAST_PORT);
 
             // Create UDP socket
             sock_udp = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
@@ -465,7 +465,7 @@ static void ntp_client_task(void *pvParameters) {
             // Allow socket reuse
             int enable = 1;
             if (setsockopt(sock_udp, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
-                ESP_LOGW(TAG, "setsockopt(SO_REUSEADDR) failed: errno %d", errno);
+                //ESP_LOGW(TAG, "setsockopt(SO_REUSEADDR) failed: errno %d", errno);
             }
 
             // Bind to allow receiving responses
@@ -544,7 +544,7 @@ static void ntp_client_task(void *pvParameters) {
                 }
                 continue; // Skip to next iteration
             } else {
-                ESP_LOGI(TAG, "Sent %" PRId32 " bytes of DNS query", (int32_t)sent_len);
+                //ESP_LOGI(TAG, "Sent %" PRId32 " bytes of DNS query", (int32_t)sent_len);
             }
 
             // Receive and parse response
@@ -598,13 +598,13 @@ static void ntp_client_task(void *pvParameters) {
                             struct in_addr ip_addr;
                             memcpy(&ip_addr.s_addr, recv_buf + offset + sizeof(dns_rr_fixed_tail_t), sizeof(uint32_t));
                             snprintf(ntp_server_address, sizeof(ntp_server_address), "%s", inet_ntoa(ip_addr));
-                            ESP_LOGI(TAG, "Resolved DNS query to IP address: %s", ntp_server_address);
+                            //ESP_LOGI(TAG, "Resolved DNS query to IP address: %s", ntp_server_address);
                             
                             // Update DNS cache
                             strncpy(dns_cache.ip_address, ntp_server_address, sizeof(dns_cache.ip_address));
                             dns_cache.valid = true;
                             dns_cache.failure_count = 0; // Reset failure count on successful DNS resolution
-                            ESP_LOGI(TAG, "Updated DNS cache with IP: %s", dns_cache.ip_address);
+                            //ESP_LOGI(TAG, "Updated DNS cache with IP: %s", dns_cache.ip_address);
                             
                             ip_found = true;
                             offset = len;
@@ -638,7 +638,7 @@ static void ntp_client_task(void *pvParameters) {
                 tv.tv_sec = 2; // 2 second timeout
                 tv.tv_usec = 0;
                 if (setsockopt(sock_ntp, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv) < 0) {
-                    ESP_LOGW(TAG, "setsockopt(SO_RCVTIMEO) failed for NTP socket: errno %d", errno);
+                    //ESP_LOGW(TAG, "setsockopt(SO_RCVTIMEO) failed for NTP socket: errno %d", errno);
                 }
 
                 // Setup server address
@@ -648,7 +648,7 @@ static void ntp_client_task(void *pvParameters) {
                 server_addr.sin_addr.s_addr = inet_addr(ntp_server_address);
                 server_addr.sin_port = htons(NTP_SERVER_PORT);
 
-                ESP_LOGI(TAG, "Sending request to NTP server %s:%d", ntp_server_address, NTP_SERVER_PORT);
+                //ESP_LOGI(TAG, "Sending request to NTP server %s:%d", ntp_server_address, NTP_SERVER_PORT);
                 
                 // Prepare NTP request packet (48 bytes)
                 uint8_t ntp_packet[48];
@@ -667,14 +667,14 @@ static void ntp_client_task(void *pvParameters) {
                     
                     // Increment failure count
                     dns_cache.failure_count++;
-                ESP_LOGI(TAG, "NTP send failure, failure count: %d/%" PRId32, 
-                             dns_cache.failure_count, (int32_t)MAX_FAILURE_COUNT);
+                //ESP_LOGI(TAG, "NTP send failure, failure count: %d/%" PRId32, 
+                          //   dns_cache.failure_count, (int32_t)MAX_FAILURE_COUNT);
                     
                     // Invalidate DNS cache after too many consecutive failures
                     if (dns_cache.failure_count >= MAX_FAILURE_COUNT) {
                         dns_cache.valid = false;
                         dns_cache.failure_count = 0;
-                        ESP_LOGI(TAG, "Invalidated DNS cache due to too many NTP send failures");
+                        //ESP_LOGI(TAG, "Invalidated DNS cache due to too many NTP send failures");
                     }
                 } else {
                     // Receive NTP response
@@ -693,10 +693,10 @@ static void ntp_client_task(void *pvParameters) {
                     // Convert to milliseconds for storage and logging
                     int32_t round_trip_ms = round_trip_us / 1000;
                     
-                    ESP_LOGI(TAG, "Round trip time: %lld us (%" PRId32 " ms) [before: %ld.%06ld, after: %ld.%06ld]",
-                             round_trip_us, round_trip_ms,
-                             (long)tv_before.tv_sec, (long)tv_before.tv_usec,
-                             (long)tv_after.tv_sec, (long)tv_after.tv_usec);
+                    //ESP_LOGI(TAG, "Round trip time: %lld us (%" PRId32 " ms) [before: %ld.%06ld, after: %ld.%06ld]",
+                             //round_trip_us, round_trip_ms,
+                             //(long)tv_before.tv_sec, (long)tv_before.tv_usec,
+                             //(long)tv_after.tv_sec, (long)tv_after.tv_usec);
                     
                     if (r == sizeof(ntp_response)) {
                         // Extract the transmit timestamp (seconds and fraction) from the response
@@ -721,9 +721,9 @@ static void ntp_client_task(void *pvParameters) {
                         // The difference is 70 years in seconds = 2208988800UL
                         time_t unix_time = seconds_since_1900 - 2208988800UL;
                         
-                        ESP_LOGI(TAG, "Received NTP time: %lu.%06" PRId32 ", Unix time: %lu.%06" PRId32 "", 
-                                (unsigned long)seconds_since_1900, microseconds, 
-                                (unsigned long)unix_time, microseconds);
+                        //ESP_LOGI(TAG, "Received NTP time: %lu.%06" PRId32 ", Unix time: %lu.%06" PRId32 "", 
+                                //(unsigned long)seconds_since_1900, microseconds, 
+                                //(unsigned long)unix_time, microseconds);
                         
                         // Reset failure count on successful NTP response
                         dns_cache.failure_count = 0;
@@ -734,28 +734,28 @@ static void ntp_client_task(void *pvParameters) {
                         
                         // Increment failure count
                         dns_cache.failure_count++;
-                        ESP_LOGI(TAG, "NTP receive failure, failure count: %d/%" PRId32, 
-                                 dns_cache.failure_count, (int32_t)MAX_FAILURE_COUNT);
+                        //ESP_LOGI(TAG, "NTP receive failure, failure count: %d/%" PRId32, 
+                                 //dns_cache.failure_count, (int32_t)MAX_FAILURE_COUNT);
                         
                         // Invalidate DNS cache after too many consecutive failures
                         if (dns_cache.failure_count >= MAX_FAILURE_COUNT) {
                             dns_cache.valid = false;
                             dns_cache.failure_count = 0;
-                            ESP_LOGI(TAG, "Invalidated DNS cache due to too many NTP receive failures");
+                            //ESP_LOGI(TAG, "Invalidated DNS cache due to too many NTP receive failures");
                         }
                     } else {
                         ESP_LOGE(TAG, "Failed to receive time: received %d bytes (expected %d)", r, sizeof(ntp_response));
                         
                         // Increment failure count
                         dns_cache.failure_count++;
-                        ESP_LOGI(TAG, "NTP receive failure (wrong size), failure count: %d/%" PRId32, 
-                                 dns_cache.failure_count, (int32_t)MAX_FAILURE_COUNT);
+                        //ESP_LOGI(TAG, "NTP receive failure (wrong size), failure count: %d/%" PRId32, 
+                                 //dns_cache.failure_count, (int32_t)MAX_FAILURE_COUNT);
                         
                         // Invalidate DNS cache after too many consecutive failures
                         if (dns_cache.failure_count >= MAX_FAILURE_COUNT) {
                             dns_cache.valid = false;
                             dns_cache.failure_count = 0;
-                            ESP_LOGI(TAG, "Invalidated DNS cache due to too many NTP receive failures");
+                            //ESP_LOGI(TAG, "Invalidated DNS cache due to too many NTP receive failures");
                         }
                     }
                 }
@@ -764,7 +764,7 @@ static void ntp_client_task(void *pvParameters) {
                 close(sock_ntp);
             }
         } else {
-             ESP_LOGW(TAG, "Could not resolve %s via DNS query to multicast", QUERY_TARGET);
+             //ESP_LOGW(TAG, "Could not resolve %s via DNS query to multicast", QUERY_TARGET);
              // No IP found, will retry after delay
         }
 
@@ -781,13 +781,13 @@ static void ntp_client_task(void *pvParameters) {
         // Check if we have all 25 samples yet
         if (ntp_history.count < NTP_HISTORY_SIZE) {
             // Fast polling until we have all samples
-            ESP_LOGI(TAG, "Fast polling mode: %d/%" PRId32 " samples collected", 
-                     ntp_history.count, (int32_t)NTP_HISTORY_SIZE);
+            //ESP_LOGI(TAG, "Fast polling mode: %d/%" PRId32 " samples collected", 
+                     //ntp_history.count, (int32_t)NTP_HISTORY_SIZE);
             vTaskDelay(NTP_FAST_POLL_INTERVAL_MS / portTICK_PERIOD_MS); // Wait 0.5 seconds before next attempt
         } else if (!initial_sampling_complete) {
             // We just completed initial sampling
-            ESP_LOGI(TAG, "Initial sampling complete with %" PRId32 " samples. Switching to normal polling rate.", 
-                     (int32_t)ntp_history.count);
+            //ESP_LOGI(TAG, "Initial sampling complete with %" PRId32 " samples. Switching to normal polling rate.", 
+                     //(int32_t)ntp_history.count);
             initial_sampling_complete = true;
             vTaskDelay(NTP_POLL_INTERVAL_MS / portTICK_PERIOD_MS); // Switch to normal polling interval
         } else {

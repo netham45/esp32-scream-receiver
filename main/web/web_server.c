@@ -1,9 +1,10 @@
 #include "web_server.h"
-#include "wifi_manager.h"
-#include "config_manager.h"
+#include "wifi/wifi_manager.h"
+#include "config/config_manager.h"
 #include "config.h"
 #include "bq25895/bq25895_web.h"
 #include "bq25895/bq25895.h"
+#include "lifecycle_manager.h"
 
 // External function from audio.c to apply volume changes
 extern void resume_playback(void);
@@ -944,6 +945,7 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     // SPDIF settings (only relevant when IS_SPDIF is defined)
 #ifdef IS_SPDIF
     cJSON_AddNumberToObject(root, "spdif_data_pin", config->spdif_data_pin);
+    cJSON_AddBoolToObject(root, "enable_spdif_sender", config->enable_spdif_sender);
 #endif
 
     // USB Scream Sender settings
@@ -960,6 +962,9 @@ static esp_err_t settings_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "activity_threshold_packets", config->activity_threshold_packets);
     cJSON_AddNumberToObject(root, "silence_amplitude_threshold", config->silence_amplitude_threshold);
     cJSON_AddNumberToObject(root, "network_inactivity_timeout_ms", config->network_inactivity_timeout_ms);
+
+    // Use Direct Write
+    cJSON_AddBoolToObject(root, "use_direct_write", config->use_direct_write);
 
     // Convert JSON to string
     char *json_str = cJSON_Print(root);
@@ -1190,15 +1195,14 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
     }
 #endif
 
-    // Free the JSON object
-    cJSON_Delete(root);
-
-    // Save the configuration to NVS
-    esp_err_t err = config_manager_save_config();
-    if (err != ESP_OK) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save configuration");
-        return ESP_FAIL;
+    // SPDIF sender setting
+#ifdef IS_SPDIF
+    cJSON *enable_spdif_sender = cJSON_GetObjectItem(root, "enable_spdif_sender");
+    if (enable_spdif_sender && cJSON_IsBool(enable_spdif_sender)) {
+        config->enable_spdif_sender = cJSON_IsTrue(enable_spdif_sender);
+        ESP_LOGI(TAG, "Updating S/PDIF sender enabled to: %d", config->enable_spdif_sender);
     }
+#endif
 
     // Apply SPDIF changes if needed
 #ifdef IS_SPDIF
@@ -1232,11 +1236,35 @@ static esp_err_t settings_post_handler(httpd_req_t *req)
         }
     }
     
+    // Handle direct write setting
+    cJSON *use_direct_write = cJSON_GetObjectItem(root, "use_direct_write");
+    ESP_LOGI(TAG, "Got use_direct_write from JSON: %p", use_direct_write);
+    if (use_direct_write) {
+        ESP_LOGI(TAG, "use_direct_write type: %d", use_direct_write->type);
+    }
+    if (use_direct_write && cJSON_IsBool(use_direct_write)) {
+        bool old_value = config->use_direct_write;
+        config->use_direct_write = cJSON_IsTrue(use_direct_write);
+        ESP_LOGI(TAG, "Direct write mode changed from %d to %d", old_value, config->use_direct_write);
+    } else {
+        ESP_LOGW(TAG, "Invalid or missing use_direct_write in request");
+    }
+    
     // Apply volume changes immediately if volume was changed
     if (volume_changed) {
         ESP_LOGI(TAG, "Volume changed, applying immediately");
         resume_playback();
     }
+
+    // Save the configuration to NVS after all settings are processed
+    esp_err_t err = config_manager_save_config();
+    if (err != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to save configuration");
+        return ESP_FAIL;
+    }
+
+    // Notify the lifecycle manager that the configuration has changed
+    lifecycle_manager_post_event(LIFECYCLE_EVENT_CONFIGURATION_CHANGED);
 
     // Send success response
     httpd_resp_set_type(req, "application/json");

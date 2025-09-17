@@ -116,10 +116,23 @@
                     {{#IS_SPDIF}}
                     <div class="form-row">
                         <label for="spdif_data_pin">S/PDIF Output Pin:</label>
-                        <input type="number" id="spdif_data_pin" name="spdif_data_pin" min="0" max="39" value="23">
+                        <input type="number" id="spdif_data_pin" name="spdif_data_pin" min="0" max="39" value="17">
                         <p class="setting-description">GPIO pin number for S/PDIF digital audio output (default: 23).</p>
                     </div>
                     {{/IS_SPDIF}}
+
+                    {{#IS_SPDIF}}
+                    <h3>S/PDIF Sender Settings</h3>
+                    <div style="margin-bottom: 15px;">
+                        <a href="/spdif_stats.html" target="_blank" style="color: #007bff; text-decoration: none;">📊 View SPDIF Decoder Statistics</a>
+                    </div>
+                    <div class="form-row checkbox-row">
+                        <label for="enable_spdif_sender">Enable S/PDIF Sender Mode:</label>
+                        <input type="checkbox" id="enable_spdif_sender" name="enable_spdif_sender">
+                        <p class="setting-description">When enabled, the ESP32 captures audio from the S/PDIF input and sends it as a Scream stream over the network.</p>
+                    </div>
+                    {{/IS_SPDIF}}
+
                     <div class="form-row">
                         <label for="sample_rate">Sample Rate (Hz):</label>
                         <input type="number" id="sample_rate" name="sample_rate" min="8000" max="192000" step="1000">
@@ -141,24 +154,35 @@
                         <p class="setting-description">When enabled, audio data bypasses the buffer system for lower latency but potentially less stable playback.</p>
                     </div>
                     
-                    {{#IS_USB}}
-                    <h3>USB Sender Settings</h3>
-                    <div class="form-row checkbox-row">
-                        <label for="enable_usb_sender">Enable USB Sender Mode:</label>
-                        <input type="checkbox" id="enable_usb_sender" name="enable_usb_sender">
-                        <p class="setting-description">When enabled, the ESP32 acts as a USB sound card on a device such as a PC, PS5, or Switch and acts as a Scream source.</p>
+                    <div class="settings-group">
+                        <h2>Sender Settings</h2>
+                        {{#IS_USB}}
+                        <div class="form-row checkbox-row">
+                            <label for="enable_usb_sender">Enable USB Sender Mode:</label>
+                            <input type="checkbox" id="enable_usb_sender" name="enable_usb_sender">
+                            <p class="setting-description">When enabled, the ESP32 acts as a USB sound card and sends the audio as a Scream stream.</p>
+                        </div>
+                        {{/IS_USB}}
+
+                        {{#IS_SPDIF}}
+                        <div class="form-row checkbox-row">
+                            <label for="enable_spdif_sender">Enable S/PDIF Sender Mode:</label>
+                            <input type="checkbox" id="enable_spdif_sender" name="enable_spdif_sender">
+                            <p class="setting-description">When enabled, the ESP32 captures audio from S/PDIF input and sends it as a Scream stream.</p>
+                        </div>
+                        {{/IS_SPDIF}}
+
+                        <div class="form-row sender-option" id="sender_ip_row">
+                            <label for="sender_destination_ip">Destination IP:</label>
+                            <input type="text" id="sender_destination_ip" name="sender_destination_ip">
+                            <p class="setting-description">IP address of the Scream receiver (e.g., 192.168.1.100 or 192.168.1.255 for broadcast).</p>
+                        </div>
+                        <div class="form-row sender-option" id="sender_port_row">
+                            <label for="sender_destination_port">Destination Port:</label>
+                            <input type="number" id="sender_destination_port" name="sender_destination_port" min="1" max="65535">
+                            <p class="setting-description">UDP port of the Scream receiver (default: 4010).</p>
+                        </div>
                     </div>
-                    <div class="form-row sender-option" id="sender_ip_row">
-                        <label for="sender_destination_ip">Destination IP:</label>
-                        <input type="text" id="sender_destination_ip" name="sender_destination_ip">
-                        <p class="setting-description">IP address of the Scream receiver (use 192.168.1.255 for broadcast)</p>
-                    </div>
-                    <div class="form-row sender-option" id="sender_port_row">
-                        <label for="sender_destination_port">Destination Port:</label>
-                        <input type="number" id="sender_destination_port" name="sender_destination_port" min="1" max="65535">
-                        <p class="setting-description">UDP port of the Scream receiver (default: 4010)</p>
-                    </div>
-                    {{/IS_USB}}
                 </div>
                 
                 <div class="settings-group">

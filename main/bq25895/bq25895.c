@@ -197,6 +197,8 @@ esp_err_t bq25895_init(const bq25895_config_t *cfg)
         ESP_LOGW(TAG, "Failed to reset watchdog timer, err = %d (%s)", ret, esp_err_to_name(ret));
     }
 
+    bq25895_write_reg(BQ25895_REG_02, 0x0B); // Max input charge voltage 5v
+
     return ESP_OK;
 }
 

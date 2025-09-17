@@ -7,6 +7,11 @@
         "scream_sender.h": "c",
         "inttypes.h": "c",
         "web_server.h": "c",
-        "bq25895_web.h": "c"
+        "bq25895_web.h": "c",
+        "string": "c",
+        "bmc_edge_decoder.h": "c",
+        "xmemory": "c",
+        "channel_status.h": "c",
+        "histogram.h": "c"
     }
 }
