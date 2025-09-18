@@ -1,7 +1,7 @@
 #ifndef HISTOGRAM_H
 #define HISTOGRAM_H
 
-#include "types.h"
+#include "spdif_in.h"
 
 extern struct g_timing_t {
     uint32_t histogram[256];

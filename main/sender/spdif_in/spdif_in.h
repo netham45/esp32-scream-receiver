@@ -1,9 +1,9 @@
 #ifndef SPDIF_H
 #define SPDIF_H
 
-#include "types.h"
 #include "esp_err.h"
 #include "freertos/ringbuf.h"
+#include "driver/rmt_rx.h"
 #include <string.h>
 
 // Configuration constants
@@ -18,6 +18,27 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct
+{
+    bool groups_identified;   // Three pulse groups found
+    bool ratios_valid;        // Ratios match 1:2:3 within tolerance
+    bool distribution_valid;  // Distribution matches expected percentages
+    float ratio_error;        // Error from ideal 1:2:3 ratio
+    float short_pulse_pct;    // Actual short pulse percentage
+    float medium_pulse_pct;   // Actual medium pulse percentage
+    float long_pulse_pct;     // Actual long pulse percentage
+    float distribution_error; // Total distribution error
+} timing_validation_t;
+
+// Peak detection structure for histogram analysis
+typedef struct
+{
+    uint32_t bin;
+    uint32_t count;
+    float center;
+    uint32_t width;
+} peak_t;
 
 extern RingbufHandle_t pcm_buffer;
 
