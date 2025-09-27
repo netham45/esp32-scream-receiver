@@ -7,17 +7,22 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <inttypes.h>
 
 static const char *TAG = "bq25895";
 
-// I2C handle
-static i2c_port_t i2c_port = I2C_NUM_0;
+// I2C handles for new driver
+static i2c_master_bus_handle_t i2c_bus_handle = NULL;
+static i2c_master_dev_handle_t i2c_dev_handle = NULL;
 static bool is_initialized = false;
+
+// Mutex for thread safety
+static SemaphoreHandle_t i2c_mutex = NULL;
 
 // Default configuration
 static bq25895_config_t config = {
-    .i2c_port = I2C_NUM_0,
+    .i2c_port = 0,  // Now an integer
     .i2c_freq = 400000,
     .sda_gpio = -1,
     .scl_gpio = -1,
@@ -30,20 +35,20 @@ static bq25895_config_t config = {
  */
 esp_err_t bq25895_read_reg(bq25895_reg_t reg, uint8_t *value)
 {
-    if (!is_initialized) {
+    if (!is_initialized || i2c_dev_handle == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (BQ25895_I2C_ADDR << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, reg, true);
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (BQ25895_I2C_ADDR << 1) | I2C_MASTER_READ, true);
-    i2c_master_read_byte(cmd, value, I2C_MASTER_LAST_NACK);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, pdMS_TO_TICKS(10));
-    i2c_cmd_link_delete(cmd);
+    // Take mutex for thread safety
+    if (xSemaphoreTake(i2c_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take I2C mutex");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    uint8_t write_buf = reg;
+    esp_err_t ret = i2c_master_transmit_receive(i2c_dev_handle, &write_buf, 1, value, 1, pdMS_TO_TICKS(100));
+    
+    xSemaphoreGive(i2c_mutex);
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read register 0x%02x, err = %d (%s)", reg, ret, esp_err_to_name(ret));
@@ -57,18 +62,20 @@ esp_err_t bq25895_read_reg(bq25895_reg_t reg, uint8_t *value)
  */
 esp_err_t bq25895_write_reg(bq25895_reg_t reg, uint8_t value)
 {
-    if (!is_initialized) {
+    if (!is_initialized || i2c_dev_handle == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (BQ25895_I2C_ADDR << 1) | I2C_MASTER_WRITE, true);
-    i2c_master_write_byte(cmd, reg, true);
-    i2c_master_write_byte(cmd, value, true);
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, pdMS_TO_TICKS(10));
-    i2c_cmd_link_delete(cmd);
+    // Take mutex for thread safety
+    if (xSemaphoreTake(i2c_mutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to take I2C mutex");
+        return ESP_ERR_TIMEOUT;
+    }
+
+    uint8_t write_buf[2] = {reg, value};
+    esp_err_t ret = i2c_master_transmit(i2c_dev_handle, write_buf, 2, pdMS_TO_TICKS(100));
+    
+    xSemaphoreGive(i2c_mutex);
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to write register 0x%02x with value 0x%02x, err = %d (%s)", reg, value, ret, esp_err_to_name(ret));
@@ -82,17 +89,15 @@ esp_err_t bq25895_write_reg(bq25895_reg_t reg, uint8_t value)
  */
 static esp_err_t bq25895_scan_i2c_bus(void)
 {
+    if (i2c_bus_handle == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     ESP_LOGI(TAG, "Scanning I2C bus for devices...");
     uint8_t devices_found = 0;
     
     for (uint8_t i = 1; i < 128; i++) {
-        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-        i2c_master_start(cmd);
-        i2c_master_write_byte(cmd, (i << 1) | I2C_MASTER_WRITE, true);
-        i2c_master_stop(cmd);
-        esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, pdMS_TO_TICKS(10));
-        i2c_cmd_link_delete(cmd);
-        
+        esp_err_t ret = i2c_master_probe(i2c_bus_handle, i, pdMS_TO_TICKS(10));
         if (ret == ESP_OK) {
             ESP_LOGI(TAG, "Found I2C device at address 0x%02x", i);
             devices_found++;
@@ -114,7 +119,8 @@ static esp_err_t bq25895_scan_i2c_bus(void)
 esp_err_t bq25895_init(const bq25895_config_t *cfg)
 {
     if (is_initialized) {
-        return ESP_ERR_INVALID_STATE;
+        ESP_LOGW(TAG, "BQ25895 already initialized, skipping reinitialization");
+        return ESP_OK; // Return success if already initialized
     }
 
     if (cfg == NULL) {
@@ -125,39 +131,78 @@ esp_err_t bq25895_init(const bq25895_config_t *cfg)
         return ESP_ERR_INVALID_ARG;
     }
 
+    // Ensure clean state before initialization
+    i2c_bus_handle = NULL;
+    i2c_dev_handle = NULL;
+    
     // Save configuration
     config = *cfg;
-    i2c_port = cfg->i2c_port;
 
-    ESP_LOGI(TAG, "Initializing BQ25895 on I2C port %d (SDA: %d, SCL: %d, freq: %" PRIu32 " Hz)",
+    ESP_LOGI(TAG, "Initializing BQ25895 on I2C port %d (SDA: %d, SCL: %d, freq: %"PRIu32" Hz)",
              cfg->i2c_port, cfg->sda_gpio, cfg->scl_gpio, cfg->i2c_freq);
 
-    // Configure I2C
-    i2c_config_t i2c_cfg = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = cfg->sda_gpio,
-        .scl_io_num = cfg->scl_gpio,
-        .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = cfg->i2c_freq,
-    };
-
-    esp_err_t ret = i2c_param_config(i2c_port, &i2c_cfg);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure I2C parameters, err = %d (%s)", ret, esp_err_to_name(ret));
-        return ret;
+    // Create mutex for thread safety if it doesn't exist
+    if (i2c_mutex == NULL) {
+        i2c_mutex = xSemaphoreCreateMutex();
+        if (i2c_mutex == NULL) {
+            ESP_LOGE(TAG, "Failed to create I2C mutex");
+            return ESP_ERR_NO_MEM;
+        }
     }
 
-    // Check if I2C driver is already installed
-    ret = i2c_driver_install(i2c_port, I2C_MODE_MASTER, 0, 0, 0);
+    // Configure I2C bus
+    i2c_master_bus_config_t bus_config = {
+        .i2c_port = cfg->i2c_port,
+        .sda_io_num = cfg->sda_gpio,
+        .scl_io_num = cfg->scl_gpio,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .glitch_ignore_cnt = 7,
+        .intr_priority = 0,
+        .trans_queue_depth = 0,
+        .flags = {
+            .enable_internal_pullup = true,
+        },
+    };
+
+    esp_err_t ret = i2c_new_master_bus(&bus_config, &i2c_bus_handle);
     if (ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "I2C driver already installed, trying to delete and reinstall");
-        i2c_driver_delete(i2c_port);
-        ret = i2c_driver_install(i2c_port, I2C_MODE_MASTER, 0, 0, 0);
+        // Bus might already be initialized, try to delete and recreate
+        ESP_LOGW(TAG, "I2C bus may already exist, attempting cleanup and reinit");
+        i2c_bus_handle = NULL;
+        // Try again after a small delay
+        vTaskDelay(pdMS_TO_TICKS(10));
+        ret = i2c_new_master_bus(&bus_config, &i2c_bus_handle);
     }
     
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install I2C driver, err = %d (%s)", ret, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to create I2C master bus, err = %d (%s)", ret, esp_err_to_name(ret));
+        if (i2c_mutex) {
+            vSemaphoreDelete(i2c_mutex);
+            i2c_mutex = NULL;
+        }
+        return ret;
+    }
+
+    // Add BQ25895 device to the bus
+    i2c_device_config_t dev_config = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = BQ25895_I2C_ADDR,
+        .scl_speed_hz = cfg->i2c_freq,
+        .scl_wait_us = 0,
+        .flags = {
+            .disable_ack_check = false,
+        },
+    };
+
+    ret = i2c_master_bus_add_device(i2c_bus_handle, &dev_config, &i2c_dev_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to add I2C device, err = %d (%s)", ret, esp_err_to_name(ret));
+        i2c_del_master_bus(i2c_bus_handle);
+        i2c_bus_handle = NULL;
+        if (i2c_mutex) {
+            vSemaphoreDelete(i2c_mutex);
+            i2c_mutex = NULL;
+        }
         return ret;
     }
 
@@ -176,7 +221,14 @@ esp_err_t bq25895_init(const bq25895_config_t *cfg)
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to read device ID, err = %d (%s)", ret, esp_err_to_name(ret));
         is_initialized = false;
-        i2c_driver_delete(i2c_port);
+        i2c_master_bus_rm_device(i2c_dev_handle);
+        i2c_dev_handle = NULL;
+        i2c_del_master_bus(i2c_bus_handle);
+        i2c_bus_handle = NULL;
+        if (i2c_mutex) {
+            vSemaphoreDelete(i2c_mutex);
+            i2c_mutex = NULL;
+        }
         return ret;
     }
 
@@ -185,7 +237,14 @@ esp_err_t bq25895_init(const bq25895_config_t *cfg)
     if (device_id != 0x07) {
         ESP_LOGE(TAG, "Invalid device ID: 0x%02x (expected 0x07), register value: 0x%02x", device_id, value);
         is_initialized = false;
-        i2c_driver_delete(i2c_port);
+        i2c_master_bus_rm_device(i2c_dev_handle);
+        i2c_dev_handle = NULL;
+        i2c_del_master_bus(i2c_bus_handle);
+        i2c_bus_handle = NULL;
+        if (i2c_mutex) {
+            vSemaphoreDelete(i2c_mutex);
+            i2c_mutex = NULL;
+        }
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -197,6 +256,8 @@ esp_err_t bq25895_init(const bq25895_config_t *cfg)
         ESP_LOGW(TAG, "Failed to reset watchdog timer, err = %d (%s)", ret, esp_err_to_name(ret));
     }
 
+    bq25895_write_reg(BQ25895_REG_02, 0x0B); // Max input charge voltage 5v
+
     return ESP_OK;
 }
 
@@ -205,17 +266,38 @@ esp_err_t bq25895_init(const bq25895_config_t *cfg)
  */
 esp_err_t bq25895_deinit(void)
 {
-    if (!is_initialized) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    esp_err_t ret = i2c_driver_delete(i2c_port);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to delete I2C driver, err = %d (%s)", ret, esp_err_to_name(ret));
-        return ret;
-    }
-
+    // Mark as uninitialized first to prevent any concurrent access
     is_initialized = false;
+
+    esp_err_t ret = ESP_OK;
+    esp_err_t temp_ret;
+    
+    // Clean up device handle first
+    if (i2c_dev_handle != NULL) {
+        temp_ret = i2c_master_bus_rm_device(i2c_dev_handle);
+        if (temp_ret != ESP_OK && temp_ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "Failed to remove I2C device, err = %d (%s)", temp_ret, esp_err_to_name(temp_ret));
+            // Continue cleanup even if this fails
+        }
+        i2c_dev_handle = NULL;
+    }
+
+    // Clean up bus handle
+    if (i2c_bus_handle != NULL) {
+        temp_ret = i2c_del_master_bus(i2c_bus_handle);
+        if (temp_ret != ESP_OK && temp_ret != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(TAG, "Failed to delete I2C bus, err = %d (%s)", temp_ret, esp_err_to_name(temp_ret));
+            // Continue cleanup even if this fails
+        }
+        i2c_bus_handle = NULL;
+    }
+
+    // Clean up mutex last
+    if (i2c_mutex != NULL) {
+        vSemaphoreDelete(i2c_mutex);
+        i2c_mutex = NULL;
+    }
+
     return ESP_OK;
 }
 
@@ -258,8 +340,8 @@ esp_err_t bq25895_reset_watchdog(void)
         return ret;
     }
 
-    // Set bit 6 (WD_RST) to reset the watchdog timer
-    value |= (1 << 6);
+    // Set WD_RST bit to reset the watchdog timer
+    value |= BQ25895_WD_RST_BIT;
     ret = bq25895_write_reg(BQ25895_REG_03, value);
     if (ret != ESP_OK) {
         return ret;
@@ -312,8 +394,8 @@ esp_err_t bq25895_get_status(bq25895_status_t *status)
     status->sdp_stat = (reg_0b >> 1) & 0x01;
     status->vsys_stat = reg_0b & 0x01;
 
-    status->watchdog_fault = (reg_0c >> 7) & 0x01;
-    status->boost_fault = (reg_0c >> 6) & 0x01;
+    status->watchdog_fault = (reg_0c & BQ25895_WATCHDOG_FAULT_BIT) ? 1 : 0;
+    status->boost_fault = (reg_0c & BQ25895_BOOST_FAULT_BIT) ? 1 : 0;
     status->chg_fault = (reg_0c >> 4) & 0x03;
     status->bat_fault = (reg_0c >> 3) & 0x01;
     status->ntc_fault = reg_0c & 0x07;
@@ -543,8 +625,8 @@ esp_err_t bq25895_enable_charging(bool enable)
     esp_err_t ret = bq25895_read_reg(BQ25895_REG_03, &reg_03);
     if (ret != ESP_OK) return ret;
 
-    reg_03 &= ~(1 << 4); // Clear CHG_CONFIG bit
-    reg_03 |= (enable ? (1 << 4) : 0);
+    reg_03 &= ~BQ25895_CHG_CONFIG_BIT; // Clear CHG_CONFIG bit
+    reg_03 |= (enable ? BQ25895_CHG_CONFIG_BIT : 0);
 
     ret = bq25895_write_reg(BQ25895_REG_03, reg_03);
     if (ret != ESP_OK) return ret;
@@ -565,8 +647,8 @@ esp_err_t bq25895_enable_otg(bool enable)
     esp_err_t ret = bq25895_read_reg(BQ25895_REG_03, &reg_03);
     if (ret != ESP_OK) return ret;
 
-    reg_03 &= ~(1 << 5); // Clear OTG_CONFIG bit
-    reg_03 |= (enable ? (1 << 5) : 0);
+    reg_03 &= ~BQ25895_OTG_CONFIG_BIT; // Clear OTG_CONFIG bit
+    reg_03 |= (enable ? BQ25895_OTG_CONFIG_BIT : 0);
 
     ret = bq25895_write_reg(BQ25895_REG_03, reg_03);
     if (ret != ESP_OK) return ret;

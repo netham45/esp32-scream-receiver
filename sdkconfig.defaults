@@ -1,5 +1,9 @@
 # The mDNS component is now added as a dependency in idf_component.yml
 
+# Partition Table Configuration
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
 # USB-C Power Management Configuration
 CONFIG_I2C_MASTER_SCL_IO=9
 CONFIG_I2C_MASTER_SDA_IO=8

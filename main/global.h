@@ -12,9 +12,6 @@
 #define NETWORK_PACKET_RECEIVED_BIT BIT0
 extern EventGroupHandle_t s_network_activity_event_group;
 
-// Global sleep state
-extern bool device_sleeping;
-
 #ifdef IS_USB
 #include "usb/uac_host.h"
 // Global USB speaker device handle

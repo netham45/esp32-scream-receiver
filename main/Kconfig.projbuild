@@ -68,4 +68,31 @@ menu "USB-C Power Management Configuration"
             Value for the boost frequency register (REG02).
             Default 0x38 sets BOOST_FREQ bit (5) for 500kHz frequency.
 
+menu "SPDIF Decoder Configuration"
+
+    config SPDIF_USE_DME_DECODER
+        bool "Use Differential Manchester Decoder"
+        default y
+        help
+            Enable the new Differential Manchester decoder.
+
+    config SPDIF_DEBUG_DURATIONS
+        bool "Enable Duration Debugging"
+        default n
+        help
+            Enable logging of duration statistics.
+
+    config SPDIF_DME_SELFTEST
+        bool "Enable DME Self Test"
+        default n
+        help
+            Enable synthetic pulse injection for DME self-test.
+
+    config SPDIF_DME_DUMP_BYTES
+        bool "Enable DME Byte Dump"
+        default n
+        help
+            Enable dumping of decoder output bytes.
+
+endmenu
 endmenu

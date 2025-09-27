@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "esp_err.h"
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,30 +17,50 @@ extern "C" {
 /** @brief BQ25895 I2C address */
 #define BQ25895_I2C_ADDR                  0x6A
 
+/** @brief Default I2C configuration for ESP32 */
+#define BQ25895_DEFAULT_I2C_PORT          0        // I2C port number
+#define BQ25895_DEFAULT_SCL_GPIO          9        // GPIO for I2C SCL
+#define BQ25895_DEFAULT_SDA_GPIO          8        // GPIO for I2C SDA
+#define BQ25895_DEFAULT_I2C_FREQ_HZ       100000   // 100kHz (can be up to 400kHz)
+#define BQ25895_DEFAULT_I2C_TIMEOUT_MS    1000     // I2C timeout in milliseconds
+
 /** @brief BQ25895 register addresses */
 typedef enum {
-    BQ25895_REG_00                     = 0x00,
-    BQ25895_REG_01                     = 0x01,
-    BQ25895_REG_02                     = 0x02,
-    BQ25895_REG_03                     = 0x03,
-    BQ25895_REG_04                     = 0x04,
-    BQ25895_REG_05                     = 0x05,
-    BQ25895_REG_06                     = 0x06,
-    BQ25895_REG_07                     = 0x07,
-    BQ25895_REG_08                     = 0x08,
-    BQ25895_REG_09                     = 0x09,
-    BQ25895_REG_0A                     = 0x0A,
-    BQ25895_REG_0B                     = 0x0B,
-    BQ25895_REG_0C                     = 0x0C,
-    BQ25895_REG_0D                     = 0x0D,
-    BQ25895_REG_0E                     = 0x0E,
-    BQ25895_REG_0F                     = 0x0F,
-    BQ25895_REG_10                     = 0x10,
-    BQ25895_REG_11                     = 0x11,
-    BQ25895_REG_12                     = 0x12,
-    BQ25895_REG_13                     = 0x13,
-    BQ25895_REG_14                     = 0x14,
+    BQ25895_REG_00                     = 0x00,  /* Input Source Control */
+    BQ25895_REG_01                     = 0x01,  /* Power-On Configuration */
+    BQ25895_REG_02                     = 0x02,  /* Charge Current Control */
+    BQ25895_REG_03                     = 0x03,  /* Pre-Charge/Termination Current Control */
+    BQ25895_REG_04                     = 0x04,  /* Charge Voltage Control */
+    BQ25895_REG_05                     = 0x05,  /* Charge Termination/Timer Control */
+    BQ25895_REG_06                     = 0x06,  /* Boost Voltage/Thermal Regulation Control */
+    BQ25895_REG_07                     = 0x07,  /* Misc Operation Control */
+    BQ25895_REG_08                     = 0x08,  /* System Status */
+    BQ25895_REG_09                     = 0x09,  /* Fault Status */
+    BQ25895_REG_0A                     = 0x0A,  /* Voltage/Current Control */
+    BQ25895_REG_0B                     = 0x0B,  /* System Status Register */
+    BQ25895_REG_0C                     = 0x0C,  /* Fault Status Register */
+    BQ25895_REG_0D                     = 0x0D,  /* VINDPM Threshold Setting */
+    BQ25895_REG_0E                     = 0x0E,  /* Battery Voltage (ADC) */
+    BQ25895_REG_0F                     = 0x0F,  /* System Voltage (ADC) */
+    BQ25895_REG_10                     = 0x10,  /* TSPCT (ADC) */
+    BQ25895_REG_11                     = 0x11,  /* VBUS Voltage (ADC) */
+    BQ25895_REG_12                     = 0x12,  /* Charge Current (ADC) */
+    BQ25895_REG_13                     = 0x13,  /* Input Current Limit Setting (PSEL) */
+    BQ25895_REG_14                     = 0x14,  /* Device ID/Reset Control */
 } bq25895_reg_t;
+
+/** @brief Boost mode specific register aliases for clarity */
+#define BQ25895_REG_CONTROL1           BQ25895_REG_03  /* OTG_CONFIG, CHG_CONFIG */
+#define BQ25895_REG_BOOST_VOLTAGE      BQ25895_REG_0A  /* BOOSTV[3:0] bits 7-4 */
+#define BQ25895_REG_SYSTEM_STATUS      BQ25895_REG_0B  /* VBUS_STAT, CHRG_STAT, PG_STAT */
+#define BQ25895_REG_FAULT_STATUS       BQ25895_REG_0C  /* WATCHDOG_FAULT, BOOST_FAULT */
+
+/** @brief Boost mode control bits */
+#define BQ25895_OTG_CONFIG_BIT         (1 << 5)  /* Bit 5 in REG_03: Enable OTG */
+#define BQ25895_CHG_CONFIG_BIT         (1 << 4)  /* Bit 4 in REG_03: Enable Charging */
+#define BQ25895_WD_RST_BIT             (1 << 6)  /* Bit 6 in REG_03: Reset Watchdog */
+#define BQ25895_BOOST_FAULT_BIT        (1 << 6)  /* Bit 6 in REG_0C: Boost Fault */
+#define BQ25895_WATCHDOG_FAULT_BIT     (1 << 7)  /* Bit 7 in REG_0C: Watchdog Fault */
 
 /** @brief BQ25895 charging status */
 typedef enum {
@@ -79,7 +99,7 @@ typedef enum {
 
 /** @brief BQ25895 configuration structure */
 typedef struct {
-    i2c_port_t i2c_port;                  /*!< I2C port number */
+    int i2c_port;                         /*!< I2C port number */
     uint32_t i2c_freq;                    /*!< I2C frequency */
     int sda_gpio;                         /*!< GPIO for I2C SDA */
     int scl_gpio;                         /*!< GPIO for I2C SCL */
