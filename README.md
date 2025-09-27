@@ -1,3 +1,7 @@
+# DEPRECATED
+
+This repo is deprecated and is no longer being updated. Focus has shifted from using the Scream protocol to using RTP and a new RTP transciever was created at https://github.com/netham45/esp32-rtp/
+
 # ESP32 Scream Audio Device
 
 A wireless audio streaming solution for ESP32 microcontrollers that works with the Scream virtual audio driver protocol.
